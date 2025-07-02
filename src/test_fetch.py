@@ -2,10 +2,10 @@ import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from src.data import fetch_livez_data
+from src.data import fetch_live_data
 
 df = fetch_live_data('AAPL', period='1d', interval='1m')
-print(df.head(20))
+print(df.tail(20))
 
 # List of 5 tickers to test
 tickers = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA']
@@ -14,4 +14,4 @@ tickers = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA']
 for ticker in tickers:
     print(f"\nFetching data for {ticker}...")
     df = fetch_live_data(ticker, period='1d', interval='1m')
-    print(df.head(5))
+    print(df.tail(5))
