@@ -2,7 +2,7 @@
 import numpy as np
 import yfinance as yf
 import pandas as pd
-import tensorflow as tf
+# import tensorflow as tf
 
 # Live data fetch using yfinance
 print("Fetching live data...")
