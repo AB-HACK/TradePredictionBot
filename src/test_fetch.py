@@ -1,5 +1,7 @@
 import sys
 import os
+
+from yfinance.scrapers.history import pd
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from src.data import fetch_live_data
@@ -63,3 +65,7 @@ plt.xlabel("Date")
 plt.ylabel("Price")
 plt.show()
 # 
+
+# major indicies from yfinance
+major_indices = pd.read_html("https://yfinance.com/world-indices")[0]
+major_indices['Ticker'] = major_indices['Ticker'].str.replace('^', '') 
