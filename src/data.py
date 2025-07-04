@@ -2,6 +2,7 @@
 import numpy as np
 import yfinance as yf
 import pandas as pd
+import matplotlib.pyplot as plt
 # import tensorflow as tf
 
 # Live data fetch using yfinance
