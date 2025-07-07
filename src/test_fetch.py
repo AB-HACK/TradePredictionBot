@@ -70,3 +70,15 @@ for ticker in tickers:
         print(df.corr())
     else:
         print(f"No data fetched for {ticker}")
+
+# Opening prices plot
+plt.figure(figsize=(12, 6))
+for ticker in tickers:
+    df = all_data[ticker]
+    if df is not None and not df.empty:
+        df['Open'].plot(label=ticker)
+plt.legend()
+plt.title("Stock Opening Prices")
+plt.xlabel("Date")
+plt.ylabel("Open Price")
+plt.show()
