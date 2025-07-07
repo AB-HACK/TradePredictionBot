@@ -1,9 +1,9 @@
 import sys
 import os
+import pandas as pd
+import matplotlib.pyplot as plt
 
-from yfinance.scrapers.history import pd
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
 from src.data import fetch_live_data
 
 # List of 5 tickers to test
@@ -18,8 +18,8 @@ for ticker in tickers:
         print(df.tail(20))
     else:
         print(f'No data fetched for {ticker}')
-      
-# checking for missing data
+
+# Checking for missing data
 for ticker in tickers:
     df = all_data[ticker]
     if df is not None and not df.empty:
@@ -28,7 +28,7 @@ for ticker in tickers:
     else:
         print(f"No data fetched for {ticker}")
 
-# checking for duplicates
+# Checking for duplicates
 for ticker in tickers:
     df = all_data[ticker]
     if df is not None and not df.empty:
@@ -36,37 +36,33 @@ for ticker in tickers:
         print(df.duplicated().sum())
     else:
         print(f"No data fetched for {ticker}")
-        
-# visualise the data
+
+# Visualise the data
 for ticker in tickers:
     df = all_data[ticker]
-    import matplotlib.pyplot as plt
     if df is not None and not df.empty:
         df.plot(kind='line', y='Open', figsize=(8, 5), subplots=True)
         plt.show()
     else:
         print(f"No data fetched for {ticker}")
 
-# this was a generated code to visualise the data "gpt"
+# Combined closing prices plot
 plt.figure(figsize=(12, 6))
 for ticker in all_data:
     df = all_data[ticker]
     if df is not None and not df.empty:
         df['Close'].plot(label=ticker)
-
 plt.legend()
 plt.title("Stock Closing Prices")
 plt.xlabel("Date")
 plt.ylabel("Price")
 plt.show()
-# 
 
-# major indicies from yfinance
+# Major indices from yfinance
 major_indices = pd.read_html("https://yfinance.com/world-indices")[0]
 major_indices['Ticker'] = major_indices['Ticker'].str.replace('^', '')
 
-# calculate the P/E ratio, earnings reports, dividends, and other financial metrics
-# calculate the correlation between the stocks
+# Correlation between the stocks
 for ticker in tickers:
     df = all_data[ticker]
     if df is not None and not df.empty:
