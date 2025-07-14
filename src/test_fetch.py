@@ -8,7 +8,7 @@ from src.data import fetch_live_data
 
 # List of 5 tickers to test
 tickers = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA']
-all_data = {ticker: fetch_live_data(ticker, period='1d', interval='1m') for ticker in tickers}
+all_data = {ticker: fetch_live_data(ticker, period='2y', interval='1mo') for ticker in tickers}
 
 # Fetch and print top 20 rows for each stock
 for ticker in tickers:
@@ -25,6 +25,24 @@ for ticker in tickers:
     if df is not None and not df.empty:
         print(f"{ticker} shape: {df.shape}")
         print(df.isnull().sum())
+    else:
+        print(f"No data fetched for {ticker}")
+
+# validate column names and data types
+for ticker in tickers:
+    df = all_data[ticker]
+    if df is not None and not df.empty:
+        print(f"{ticker} shape: {df.shape}")
+        print(df.dtypes)
+    else:
+        print(f"No data fetched for {ticker}")
+
+# check for outliers
+for ticker in tickers:
+    df = all_data[ticker]
+    if df is not None and not df.empty:
+        print(f"{ticker} shape: {df.shape}")
+        print(df.describe())
     else:
         print(f"No data fetched for {ticker}")
 
