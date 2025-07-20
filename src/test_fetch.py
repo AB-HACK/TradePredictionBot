@@ -4,11 +4,22 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from src.data import fetch_live_data
+from src.data import fetch_multiple_stocks
+from src.data_cleaning import clean_multiple_stocks
+from src.analysis_template import analyze_multiple_stocks
 
 # List of 5 tickers to test
 tickers = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA']
-all_data = {ticker: fetch_live_data(ticker, period='2y', interval='1mo') for ticker in tickers}
+
+# Fetch 3 years of data using the centralized function
+print("🚀 Fetching 3 years of data...")
+all_data = fetch_multiple_stocks(tickers, period='3y', interval='1mo')
+
+# Clean and analyze the data
+print("\n🧹 Cleaning and analyzing data...")
+cleaned_data = clean_multiple_stocks(all_data)
+analyzed_data = analyze_multiple_stocks(cleaned_data)
+all_data = analyzed_data  # Use analyzed data for further work
 
 # Fetch and print top 20 rows for each stock
 for ticker in tickers:
