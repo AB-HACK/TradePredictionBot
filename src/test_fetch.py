@@ -4,7 +4,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from src.data import fetch_multiple_stocks
+from src.data import fetch_multiple_stocksp
 from src.data_cleaning import clean_multiple_stocks
 from src.analysis_template import analyze_multiple_stocks
 
@@ -75,18 +75,6 @@ for ticker in tickers:
     else:
         print(f"No data fetched for {ticker}")
 
-# Combined closing prices plot
-# plt.figure(figsize=(12, 6))
-# for ticker in all_data:
-#     df = all_data[ticker]
-#     if df is not None and not df.empty:
-#         df['Close'].plot(label=ticker)
-# plt.legend()
-# plt.title("Stock Closing Prices")
-# plt.xlabel("Date")
-# plt.ylabel("Price")
-# plt.show()
-
 # Major indices from yfinance
 major_indices = pd.read_html("https://yfinance.com/world-indices")[0]
 major_indices['Ticker'] = major_indices['Ticker'].str.replace('^', '')
@@ -99,18 +87,6 @@ for ticker in tickers:
         print(df.corr())
     else:
         print(f"No data fetched for {ticker}")
-
-# Opening prices plot
-# plt.figure(figsize=(12, 6))
-# for ticker in tickers:
-#     df = all_data[ticker]
-#     if df is not None and not df.empty:
-#         df['Open'].plot(label=ticker)
-# plt.legend()
-# plt.title("Stock Opening Prices")
-# plt.xlabel("Date")
-# plt.ylabel("Open Price")
-# plt.show()
 
 # RSI calculation for each stock and plot (Relative Strength Index)
 def compute_rsi(series, period=14):
