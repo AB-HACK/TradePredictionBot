@@ -18,6 +18,7 @@
 import pandas as pd
 import numpy as np
 import warnings
+from .cache_manager import get_cache_manager
 warnings.filterwarnings('ignore')
 
 class StockDataAnalyzer:
@@ -86,7 +87,8 @@ class StockDataAnalyzer:
         features = {}
         if 'Close' in self.df.columns:
             features['Price_Change'] = self.df['Close'].pct_change()
-            features['Price_MA_Ratio'] = self.df['Close'] / self.df['SMA_20']
+            if 'SMA_20' in self.df.columns:
+                features['Price_MA_Ratio'] = self.df['Close'] / self.df['SMA_20']
         
         if 'Volume' in self.df.columns:
             features['Volume_Change'] = self.df['Volume'].pct_change()
@@ -101,9 +103,15 @@ class StockDataAnalyzer:
             features['Volatility'] = self.df['Volatility']
         
         # Calculate correlations
-        feature_df = pd.DataFrame(features)
-        feature_df['Target'] = target
-        aligned_data = feature_df.dropna()
+        if features:
+            # Ensure all features are 1-dimensional
+            for key, value in features.items():
+                if hasattr(value, 'values'):
+                    features[key] = value.values.flatten()
+            
+            feature_df = pd.DataFrame(features)
+            feature_df['Target'] = target
+            aligned_data = feature_df.dropna()
         
         if len(aligned_data) > 0:
             correlations = aligned_data.corr()['Target'].abs()
@@ -117,27 +125,63 @@ class StockDataAnalyzer:
         
         return self.df
     
-    def run_analysis(self):
+    def run_analysis(self, use_cache=True):
         """
-        Run complete analysis
+        Run complete analysis with optional caching
+        
+        Args:
+            use_cache: Whether to cache analysis results
         """
         print(f"Analyzing {self.ticker_name}...")
+        
+        # Check cache first if enabled
+        if use_cache:
+            cache = get_cache_manager()
+            # Look for existing analyzed data
+            for filepath, metadata in cache.cache_metadata.items():
+                if (metadata.get('ticker') == self.ticker_name and 
+                    metadata.get('data_type') == 'analyzed'):
+                    print(f"[CACHE] Loading analyzed {self.ticker_name} data from cache...")
+                    cached_df = cache.load_dataframe(filepath)
+                    if cached_df is not None:
+                        self.df = cached_df
+                        print(f"[SUCCESS] {self.ticker_name} analysis loaded from cache: {self.df.shape[0]} rows")
+                        return self.df
+        
+        # Perform analysis if not cached
         self.basic_analysis()
         self.feature_importance()
-        print(f"✅ Analysis completed for {self.ticker_name}")
+        
+        # Cache the analyzed data if enabled
+        if use_cache:
+            metadata = {
+                'analysis_timestamp': pd.Timestamp.now().isoformat(),
+                'analysis_type': 'basic_analysis',
+                'features_analyzed': ['Returns', 'RSI', 'MACD', 'Volatility']
+            }
+            cache.store_dataframe(self.df, 'analyzed', self.ticker_name, metadata)
+        
+        print(f"[SUCCESS] Analysis completed for {self.ticker_name}")
         return self.df
 
 
-def analyze_multiple_stocks(stock_data_dict):
+def analyze_multiple_stocks(stock_data_dict, use_cache=True):
     """
-    Analyze multiple stocks
+    Analyze multiple stocks with caching support
+    
+    Args:
+        stock_data_dict: Dictionary of stock data
+        use_cache: Whether to use temporary caching
+    
+    Returns:
+        Dictionary of analyzed stock data
     """
     results = {}
     
     for ticker, df in stock_data_dict.items():
         print(f"\n{'='*50}")
         analyzer = StockDataAnalyzer(df, ticker)
-        analyzer.run_analysis()
+        analyzer.run_analysis(use_cache=use_cache)
         results[ticker] = df
     
     return results 

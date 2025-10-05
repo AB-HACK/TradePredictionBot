@@ -18,6 +18,7 @@
 import pandas as pd
 import numpy as np
 import warnings
+from .cache_manager import get_cache_manager
 warnings.filterwarnings('ignore')
 
 class StockDataCleaner:
@@ -29,11 +30,31 @@ class StockDataCleaner:
         self.df = df.copy()
         self.ticker_name = ticker_name
         
-    def clean_data(self):
+    def clean_data(self, use_cache=True):
         """
         Basic cleaning pipeline - handles missing values, duplicates, and adds indicators
+        
+        Args:
+            use_cache (bool): Whether to use temporary caching for cleaned data
         """
         print(f"Cleaning {self.ticker_name}...")
+        
+        # Check cache first if enabled
+        if use_cache:
+            cache = get_cache_manager()
+            # Look for existing cleaned data
+            for filepath, metadata in cache.cache_metadata.items():
+                if (metadata.get('ticker') == self.ticker_name and 
+                    metadata.get('data_type') == 'cleaned'):
+                    print(f"[CACHE] Loading cleaned {self.ticker_name} data from cache...")
+                    cached_df = cache.load_dataframe(filepath)
+                    if cached_df is not None:
+                        self.df = cached_df
+                        print(f"[SUCCESS] {self.ticker_name} loaded from cache: {self.df.shape[0]} rows")
+                        return self.df
+        
+        # Perform cleaning if not cached
+        print(f"[PROCESSING] Processing {self.ticker_name} data...")
         
         # Handle missing values
         self.df = self.df.fillna(method='ffill')  # Forward fill for prices
@@ -62,26 +83,68 @@ class StockDataCleaner:
         self.df['MACD'] = ema_12 - ema_26
         self.df['MACD_Signal'] = self.df['MACD'].ewm(span=9).mean()
         
-        print(f"✅ {self.ticker_name} cleaned: {self.df.shape[0]} rows")
+        # Cache the cleaned data if enabled
+        if use_cache:
+            metadata = {
+                'cleaning_timestamp': pd.Timestamp.now().isoformat(),
+                'original_shape': self.df.shape,
+                'indicators_added': ['Returns', 'SMA_20', 'SMA_50', 'Volatility', 'RSI', 'MACD', 'MACD_Signal']
+            }
+            cache.store_dataframe(self.df, 'cleaned', self.ticker_name, metadata)
+        
+        print(f"[SUCCESS] {self.ticker_name} cleaned: {self.df.shape[0]} rows")
         return self.df
     
-    def save_data(self, filepath=None):
-        """Save cleaned data to CSV"""
+    def save_data(self, filepath=None, use_cache=True):
+        """
+        Save cleaned data to CSV with optional caching
+        
+        Args:
+            filepath: Custom filepath (if None, uses default naming)
+            use_cache: Whether to also cache the data temporarily
+        """
         if filepath is None:
             filepath = f"cleaned_{self.ticker_name}_data.csv"
+        
+        # Save to permanent location
         self.df.to_csv(filepath)
-        print(f"Saved to {filepath}")
+        print(f"[SAVED] Saved to {filepath}")
+        
+        # Also cache if enabled
+        if use_cache:
+            cache = get_cache_manager()
+            metadata = {
+                'permanent_filepath': filepath,
+                'save_timestamp': pd.Timestamp.now().isoformat()
+            }
+            cache.store_dataframe(self.df, 'cleaned', self.ticker_name, metadata)
+        
         return filepath
 
 
-def clean_multiple_stocks(stock_data_dict):
-    """Clean multiple stocks at once"""
+def clean_multiple_stocks(stock_data_dict, use_cache=True, save_permanent=True):
+    """
+    Clean multiple stocks at once with caching support
+    
+    Args:
+        stock_data_dict: Dictionary of stock data
+        use_cache: Whether to use temporary caching
+        save_permanent: Whether to save permanent CSV files
+    
+    Returns:
+        Dictionary of cleaned stock data
+    """
     cleaned_data = {}
     
     for ticker, df in stock_data_dict.items():
         cleaner = StockDataCleaner(df, ticker)
-        cleaned_df = cleaner.clean_data()
-        cleaner.save_data()
+        cleaned_df = cleaner.clean_data(use_cache=use_cache)
+        
+        # Save permanent file only if requested
+        if save_permanent:
+            cleaner.save_data(use_cache=use_cache)
+        
         cleaned_data[ticker] = cleaned_df
     
     return cleaned_data 
+
