@@ -11,14 +11,19 @@ from src.analysis_template import analyze_multiple_stocks
 # List of 5 tickers to test
 tickers = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA']
 
-# Fetch 3 years of data using the centralized function
-print("🚀 Fetching 3 years of data...")
-all_data = fetch_multiple_stocks(tickers, period='3y', interval='1mo')
+# Fetch 3 years of data using the centralized function with caching
+print("🚀 Fetching 3 years of data with caching...")
+all_data = fetch_multiple_stocks(tickers, period='3y', interval='1mo', use_cache=True)
 
-# Clean and analyze the data
-print("\n🧹 Cleaning and analyzing data...")
-cleaned_data = clean_multiple_stocks(all_data)
-analyzed_data = analyze_multiple_stocks(cleaned_data)
+# Clean and analyze the data with caching
+print("\n🧹 Cleaning and analyzing data with caching...")
+cleaned_data = clean_multiple_stocks(all_data, use_cache=True, save_permanent=True)
+analyzed_data = analyze_multiple_stocks(cleaned_data, use_cache=True)
+
+# Show cache status
+from src.cache_manager import get_cache_manager
+cache = get_cache_manager()
+cache.print_cache_status()
 all_data = analyzed_data  # Use analyzed data for further work
 
 # Fetch and print top 20 rows for each stock
