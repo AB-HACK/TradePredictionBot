@@ -1,0 +1,28 @@
+# Quantitative Trading System Requirements
+# Core dependencies for the quantitative trading framework
+
+# Data manipulation and analysis
+pandas
+numpy
+
+# Data fetching
+yfinance
+
+# Machine Learning
+scikit-learn
+xgboost
+
+# Visualization
+matplotlib
+seaborn
+
+# Statistical analysis
+statsmodels
+
+# Web interface (optional)
+streamlit
+
+# Advanced ML models (optional - uncomment as needed)
+# tensorflow
+# torch
+# lightgbm
