@@ -6,4 +6,9 @@ seaborn
 scikit-learn
 statsmodels
 streamlit
+xgboost
 # tensorflow
+# For advanced ML models (optional):
+# tensorflow
+# torch
+# lightgbm
