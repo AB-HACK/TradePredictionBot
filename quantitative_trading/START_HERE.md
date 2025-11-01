@@ -2,6 +2,25 @@
 
 Welcome to your professional quantitative trading framework! This guide will help you get started quickly.
 
+## ⚡ Prerequisites
+
+Before running any scripts, make sure you have:
+- Python 3.7 or higher installed
+- Installed all dependencies (see Installation below)
+
+### Installation
+
+```bash
+# Navigate to the quantitative_trading directory
+cd quantitative_trading
+
+# Install all required packages
+pip install -r requirements.txt
+
+# Verify installation (optional but recommended)
+python setup.py
+```
+
 ## 🚀 Quick Start Options
 
 ### Option 1: Quick Test (Recommended for first time)
