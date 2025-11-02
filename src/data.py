@@ -32,7 +32,17 @@ def fetch_live_data(ticker, period='1d', interval='1m', use_cache=True):
         
         # Fetch new data
         print(f"[API] Fetching fresh {ticker} data from API...")
-        df = yf.download(ticker, period=period, interval=interval)
+        df = yf.download(ticker, period=period, interval=interval, progress=False)
+        
+        # Handle MultiIndex columns (yfinance returns MultiIndex for single ticker)
+        if isinstance(df.columns, pd.MultiIndex):
+            # If single ticker, flatten the columns
+            if len(df.columns.levels[1]) == 1:
+                df.columns = df.columns.droplevel(1)
+            else:
+                # Multiple tickers - keep MultiIndex but select first ticker
+                df = df.iloc[:, df.columns.get_level_values(1) == ticker]
+                df.columns = df.columns.droplevel(1)
         
         if df is None or df.empty:
             print(f"[WARNING] No data found for {ticker}")
