@@ -19,7 +19,7 @@ from sklearn.model_selection import TimeSeriesSplit, train_test_split
 from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
 from sklearn.linear_model import LinearRegression, LogisticRegression
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
-from sklearn.metrics import mean_squared_error, accuracy_score, classification_report
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score, accuracy_score, precision_score, recall_score, f1_score, classification_report, confusion_matrix
 from sklearn.feature_selection import SelectKBest, f_regression
 import xgboost as xgb
 from .cache_manager import get_cache_manager
@@ -338,11 +338,21 @@ class QuantitativePredictor:
         lr.fit(X_train, y_train)
         y_pred = lr.predict(X_test)
         mse = mean_squared_error(y_test, y_pred)
+        mae = mean_absolute_error(y_test, y_pred)
+        r2 = r2_score(y_test, y_pred)
+        correlation = np.corrcoef(y_test, y_pred)[0, 1]
+        directional_accuracy = np.mean(np.sign(y_test) == np.sign(y_pred))
+        
         self.models['Linear_Regression'] = {
             'model': lr,
             'mse': mse,
             'rmse': np.sqrt(mse),
-            'predictions': y_pred
+            'mae': mae,
+            'r2': r2,
+            'correlation': correlation,
+            'directional_accuracy': directional_accuracy,
+            'predictions': y_pred,
+            'y_test': y_test.values
         }
         
         # Random Forest
@@ -350,11 +360,21 @@ class QuantitativePredictor:
         rf.fit(X_train, y_train)
         y_pred = rf.predict(X_test)
         mse = mean_squared_error(y_test, y_pred)
+        mae = mean_absolute_error(y_test, y_pred)
+        r2 = r2_score(y_test, y_pred)
+        correlation = np.corrcoef(y_test, y_pred)[0, 1]
+        directional_accuracy = np.mean(np.sign(y_test) == np.sign(y_pred))
+        
         self.models['Random_Forest'] = {
             'model': rf,
             'mse': mse,
             'rmse': np.sqrt(mse),
+            'mae': mae,
+            'r2': r2,
+            'correlation': correlation,
+            'directional_accuracy': directional_accuracy,
             'predictions': y_pred,
+            'y_test': y_test.values,
             'feature_importance': dict(zip(self.feature_engineer.feature_columns, rf.feature_importances_))
         }
         
@@ -364,11 +384,21 @@ class QuantitativePredictor:
             xgb_model.fit(X_train, y_train)
             y_pred = xgb_model.predict(X_test)
             mse = mean_squared_error(y_test, y_pred)
+            mae = mean_absolute_error(y_test, y_pred)
+            r2 = r2_score(y_test, y_pred)
+            correlation = np.corrcoef(y_test, y_pred)[0, 1]
+            directional_accuracy = np.mean(np.sign(y_test) == np.sign(y_pred))
+            
             self.models['XGBoost'] = {
                 'model': xgb_model,
                 'mse': mse,
                 'rmse': np.sqrt(mse),
+                'mae': mae,
+                'r2': r2,
+                'correlation': correlation,
+                'directional_accuracy': directional_accuracy,
                 'predictions': y_pred,
+                'y_test': y_test.values,
                 'feature_importance': dict(zip(self.feature_engineer.feature_columns, xgb_model.feature_importances_))
             }
         except ImportError:
@@ -381,10 +411,20 @@ class QuantitativePredictor:
         lr.fit(X_train, y_train)
         y_pred = lr.predict(X_test)
         accuracy = accuracy_score(y_test, y_pred)
+        precision = precision_score(y_test, y_pred, average='weighted', zero_division=0)
+        recall = recall_score(y_test, y_pred, average='weighted', zero_division=0)
+        f1 = f1_score(y_test, y_pred, average='weighted', zero_division=0)
+        cm = confusion_matrix(y_test, y_pred)
+        
         self.models['Logistic_Regression'] = {
             'model': lr,
             'accuracy': accuracy,
+            'precision': precision,
+            'recall': recall,
+            'f1_score': f1,
+            'confusion_matrix': cm,
             'predictions': y_pred,
+            'y_test': y_test.values,
             'classification_report': classification_report(y_test, y_pred)
         }
         
@@ -393,10 +433,20 @@ class QuantitativePredictor:
         rf.fit(X_train, y_train)
         y_pred = rf.predict(X_test)
         accuracy = accuracy_score(y_test, y_pred)
+        precision = precision_score(y_test, y_pred, average='weighted', zero_division=0)
+        recall = recall_score(y_test, y_pred, average='weighted', zero_division=0)
+        f1 = f1_score(y_test, y_pred, average='weighted', zero_division=0)
+        cm = confusion_matrix(y_test, y_pred)
+        
         self.models['Random_Forest_Classifier'] = {
             'model': rf,
             'accuracy': accuracy,
+            'precision': precision,
+            'recall': recall,
+            'f1_score': f1,
+            'confusion_matrix': cm,
             'predictions': y_pred,
+            'y_test': y_test.values,
             'feature_importance': dict(zip(self.feature_engineer.feature_columns, rf.feature_importances_))
         }
         
@@ -406,37 +456,154 @@ class QuantitativePredictor:
             xgb_model.fit(X_train, y_train)
             y_pred = xgb_model.predict(X_test)
             accuracy = accuracy_score(y_test, y_pred)
+            precision = precision_score(y_test, y_pred, average='weighted', zero_division=0)
+            recall = recall_score(y_test, y_pred, average='weighted', zero_division=0)
+            f1 = f1_score(y_test, y_pred, average='weighted', zero_division=0)
+            cm = confusion_matrix(y_test, y_pred)
+            
             self.models['XGBoost_Classifier'] = {
                 'model': xgb_model,
                 'accuracy': accuracy,
+                'precision': precision,
+                'recall': recall,
+                'f1_score': f1,
+                'confusion_matrix': cm,
                 'predictions': y_pred,
+                'y_test': y_test.values,
                 'feature_importance': dict(zip(self.feature_engineer.feature_columns, xgb_model.feature_importances_))
             }
         except ImportError:
             print("[WARNING] XGBoost not available. Install with: pip install xgboost")
     
-    def evaluate_models(self):
-        """Evaluate trained models and return performance metrics"""
-        print(f"\n=== MODEL EVALUATION FOR {self.ticker_name} ===")
+    def evaluate_models(self, verbose=True):
+        """
+        Evaluate trained models and return comprehensive performance metrics
+        
+        Args:
+            verbose: If True, print detailed evaluation report
+        
+        Returns:
+            Dictionary with evaluation results for each model
+        """
+        if verbose:
+            print(f"\n{'='*60}")
+            print(f"MODEL EVALUATION FOR {self.ticker_name}")
+            print(f"{'='*60}")
         
         results = {}
+        best_model = None
+        best_score = -np.inf
+        
         for model_name, model_info in self.models.items():
-            print(f"\n{model_name}:")
+            if verbose:
+                print(f"\n📊 {model_name}:")
             
+            # Regression models
             if 'mse' in model_info:
-                print(f"  RMSE: {model_info['rmse']:.6f}")
-                results[model_name] = {'rmse': model_info['rmse']}
+                rmse = model_info['rmse']
+                mae = model_info.get('mae', 0)
+                r2 = model_info.get('r2', 0)
+                correlation = model_info.get('correlation', 0)
+                directional_acc = model_info.get('directional_accuracy', 0)
+                
+                if verbose:
+                    print(f"  RMSE: {rmse:.6f} (lower is better)")
+                    print(f"  MAE: {mae:.6f} (lower is better)")
+                    print(f"  R² Score: {r2:.4f} (1.0 = perfect, 0 = baseline, <0 = worse than baseline)")
+                    print(f"  Correlation: {correlation:.4f} (1.0 = perfect, 0 = no correlation)")
+                    print(f"  Directional Accuracy: {directional_acc:.2%} (predicts up/down correctly)")
+                    
+                    # Performance interpretation
+                    if r2 > 0.1:
+                        print(f"  ✅ Model explains {r2:.1%} of variance (Good)")
+                    elif r2 > 0:
+                        print(f"  ⚠️  Model explains {r2:.1%} of variance (Weak)")
+                    else:
+                        print(f"  ❌ Model worse than baseline (Poor)")
+                    
+                    if directional_acc > 0.55:
+                        print(f"  ✅ Directional accuracy {directional_acc:.1%} (Good for trading)")
+                    elif directional_acc > 0.50:
+                        print(f"  ⚠️  Directional accuracy {directional_acc:.1%} (Slightly better than random)")
+                    else:
+                        print(f"  ❌ Directional accuracy {directional_acc:.1%} (Worse than random)")
+                
+                results[model_name] = {
+                    'rmse': rmse,
+                    'mae': mae,
+                    'r2': r2,
+                    'correlation': correlation,
+                    'directional_accuracy': directional_acc
+                }
+                
+                # Use R² as primary score for regression
+                score = r2
+                
+            # Classification models
             elif 'accuracy' in model_info:
-                print(f"  Accuracy: {model_info['accuracy']:.4f}")
-                results[model_name] = {'accuracy': model_info['accuracy']}
+                accuracy = model_info['accuracy']
+                precision = model_info.get('precision', 0)
+                recall = model_info.get('recall', 0)
+                f1 = model_info.get('f1_score', 0)
+                cm = model_info.get('confusion_matrix', None)
+                
+                if verbose:
+                    print(f"  Accuracy: {accuracy:.4f} ({accuracy:.2%})")
+                    print(f"  Precision: {precision:.4f}")
+                    print(f"  Recall: {recall:.4f}")
+                    print(f"  F1-Score: {f1:.4f}")
+                    
+                    if cm is not None:
+                        print(f"  Confusion Matrix:")
+                        print(f"    {cm}")
+                    
+                    # Performance interpretation
+                    if accuracy > 0.60:
+                        print(f"  ✅ Accuracy {accuracy:.1%} (Good for stock prediction)")
+                    elif accuracy > 0.55:
+                        print(f"  ⚠️  Accuracy {accuracy:.1%} (Moderate - better than random)")
+                    elif accuracy > 0.50:
+                        print(f"  ⚠️  Accuracy {accuracy:.1%} (Slightly better than random)")
+                    else:
+                        print(f"  ❌ Accuracy {accuracy:.1%} (Worse than random)")
+                
+                results[model_name] = {
+                    'accuracy': accuracy,
+                    'precision': precision,
+                    'recall': recall,
+                    'f1_score': f1,
+                    'confusion_matrix': cm.tolist() if cm is not None else None
+                }
+                
+                # Use accuracy as primary score for classification
+                score = accuracy
             
             # Feature importance
             if 'feature_importance' in model_info:
                 importance = model_info['feature_importance']
                 top_features = sorted(importance.items(), key=lambda x: x[1], reverse=True)[:10]
-                print("  Top 10 Features:")
-                for feature, score in top_features:
-                    print(f"    {feature}: {score:.4f}")
+                if verbose:
+                    print("  Top 10 Most Important Features:")
+                    for i, (feature, score) in enumerate(top_features, 1):
+                        print(f"    {i}. {feature}: {score:.4f}")
+            
+            # Track best model
+            if score > best_score:
+                best_score = score
+                best_model = model_name
+        
+        if verbose:
+            print(f"\n{'='*60}")
+            print(f"🏆 BEST MODEL: {best_model} (Score: {best_score:.4f})")
+            print(f"{'='*60}")
+            print("\n💡 INTERPRETATION GUIDE:")
+            print("  • For Regression: R² > 0.1 is good, Directional Accuracy > 55% is useful")
+            print("  • For Classification: Accuracy > 55% is better than random, >60% is good")
+            print("  • Always backtest with trading strategy to see real performance")
+            print("  • Compare model performance to buy-and-hold baseline")
+        
+        results['best_model'] = best_model
+        results['best_score'] = best_score
         
         return results
     

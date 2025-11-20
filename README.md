@@ -327,6 +327,149 @@ After successfully running the data pipeline:
 3. **Build Models**: Use the cleaned data for machine learning models
 4. **Advanced Trading**: Explore the `quantitative_trading/` module for ML-based trading strategies
 
+## 📊 How to Evaluate Model Performance
+
+### Understanding Model Evaluation Metrics
+
+After training your models, you need to know if they're performing well. Here's how to interpret the evaluation metrics:
+
+#### For Regression Models (Predicting Returns/Values)
+
+**Key Metrics:**
+- **RMSE (Root Mean Squared Error)**: Lower is better. Measures prediction error magnitude.
+- **MAE (Mean Absolute Error)**: Lower is better. Average prediction error.
+- **R² Score**: 
+  - `1.0` = Perfect predictions
+  - `> 0.1` = Good (model explains variance)
+  - `0` = No better than baseline (predicting the mean)
+  - `< 0` = Worse than baseline
+- **Correlation**: 
+  - `1.0` = Perfect positive correlation
+  - `0` = No correlation
+  - `> 0.3` = Useful for trading
+- **Directional Accuracy**: 
+  - `> 55%` = Good (predicts up/down correctly)
+  - `50%` = Random guessing
+  - `< 50%` = Worse than random
+
+**What Good Performance Looks Like:**
+- R² > 0.1 (model explains at least 10% of variance)
+- Directional Accuracy > 55% (useful for trading)
+- Correlation > 0.3 (predictions align with actual movements)
+
+#### For Classification Models (Predicting Direction Up/Down)
+
+**Key Metrics:**
+- **Accuracy**: Percentage of correct predictions
+  - `> 60%` = Good for stock prediction
+  - `55-60%` = Moderate (better than random)
+  - `50-55%` = Slightly better than random
+  - `< 50%` = Worse than random
+- **Precision**: Of predicted ups, how many were actually up?
+- **Recall**: Of actual ups, how many did we predict correctly?
+- **F1-Score**: Balance between precision and recall
+
+**What Good Performance Looks Like:**
+- Accuracy > 55% (better than random)
+- Accuracy > 60% (good for trading)
+- Balanced precision and recall
+
+### How to Evaluate Your Models
+
+```python
+from quantitative_trading.src.quantitative_models import QuantitativePredictor
+from src.data import fetch_multiple_stocks
+from src.data_cleaning import clean_multiple_stocks
+
+# 1. Prepare your data
+tickers = ['AAPL']
+stock_data = fetch_multiple_stocks(tickers, period='3y', interval='1d')
+cleaned_data = clean_multiple_stocks(stock_data)
+
+# 2. Create and train predictor
+predictor = QuantitativePredictor(cleaned_data['AAPL'], 'AAPL', target_type='direction')
+predictor.prepare_data()
+predictor.train_models()
+
+# 3. Evaluate models (automatically prints detailed report)
+results = predictor.evaluate_models()
+
+# 4. Check the best model
+print(f"Best model: {results['best_model']}")
+print(f"Best score: {results['best_score']}")
+```
+
+### Real-World Performance: Backtesting
+
+Model metrics alone aren't enough! Always backtest with a trading strategy:
+
+```python
+from quantitative_trading.src.trading_strategy import run_complete_strategy
+
+# Run complete strategy with backtesting
+results = run_complete_strategy(
+    tickers=['AAPL'],
+    target_type='direction',
+    signal_type='direction'
+)
+
+# Check backtest performance
+for ticker, result in results.items():
+    backtest = result['backtest_results']
+    print(f"\n{ticker} Performance:")
+    print(f"  Total Return: {backtest['total_return_pct']:.2f}%")
+    print(f"  Sharpe Ratio: {backtest['sharpe_ratio']:.3f}")
+    print(f"  Win Rate: {backtest['win_rate_pct']:.1f}%")
+    print(f"  Max Drawdown: {backtest['max_drawdown_pct']:.2f}%")
+```
+
+**Backtest Metrics to Watch:**
+- **Sharpe Ratio**: `> 1.0` = Good, `> 2.0` = Excellent
+- **Win Rate**: `> 50%` = Profitable strategy
+- **Max Drawdown**: `< 20%` = Acceptable risk
+- **Total Return**: Compare to buy-and-hold baseline
+
+### Red Flags (Model Not Working Well)
+
+❌ **Regression Models:**
+- R² < 0 (worse than baseline)
+- Directional Accuracy < 50% (worse than random)
+- Correlation < 0.2 (weak relationship)
+
+❌ **Classification Models:**
+- Accuracy < 50% (worse than random)
+- Very imbalanced precision/recall
+- Confusion matrix shows random guessing pattern
+
+❌ **Backtesting:**
+- Negative Sharpe Ratio
+- Win Rate < 45%
+- Max Drawdown > 30%
+- Underperforms buy-and-hold
+
+### Tips for Improving Performance
+
+1. **Try Different Models**: Test Random Forest, XGBoost, Linear Regression
+2. **Adjust Features**: Use feature importance to focus on relevant features
+3. **Change Target**: Try 'direction', 'returns', or 'volatility'
+4. **Tune Parameters**: Adjust confidence thresholds, prediction horizons
+5. **More Data**: Use longer time periods (3-5 years minimum)
+6. **Risk Management**: Implement stop-loss and position sizing
+
+### Quick Performance Check
+
+Run this to quickly evaluate your model:
+
+```python
+# Quick evaluation
+predictor.evaluate_models()  # Prints comprehensive report
+
+# The report will show:
+# ✅ = Good performance
+# ⚠️  = Moderate performance  
+# ❌ = Poor performance
+```
+
 ## 📚 Additional Resources
 
 - **Quantitative Trading Module**: See `quantitative_trading/README.md` for advanced ML trading strategies
