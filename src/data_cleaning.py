@@ -27,6 +27,8 @@ class StockDataCleaner:
     """
     
     def __init__(self, df, ticker_name):
+        if df is None or df.empty:
+            raise ValueError(f"DataFrame for {ticker_name} is None or empty")
         self.df = df.copy()
         self.ticker_name = ticker_name
         
@@ -57,7 +59,8 @@ class StockDataCleaner:
         print(f"[PROCESSING] Processing {self.ticker_name} data...")
         
         # Handle missing values
-        self.df = self.df.fillna(method='ffill')  # Forward fill for prices
+        # Use ffill() instead of deprecated fillna(method='ffill')
+        self.df = self.df.ffill()  # Forward fill for prices
         if 'Volume' in self.df.columns:
             self.df['Volume'] = self.df['Volume'].fillna(0)
         
@@ -74,8 +77,10 @@ class StockDataCleaner:
         delta = self.df['Close'].diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-        rs = gain / loss
+        # Avoid division by zero - use np.where to handle zero loss
+        rs = np.where(loss != 0, gain / loss, np.nan)
         self.df['RSI'] = 100 - (100 / (1 + rs))
+        self.df['RSI'] = self.df['RSI'].fillna(50)  # Default to 50 if no loss/gain data
         
         # MACD
         ema_12 = self.df['Close'].ewm(span=12).mean()
@@ -85,6 +90,7 @@ class StockDataCleaner:
         
         # Cache the cleaned data if enabled
         if use_cache:
+            cache = get_cache_manager()  # Get cache manager if not already retrieved
             metadata = {
                 'cleaning_timestamp': pd.Timestamp.now().isoformat(),
                 'original_shape': self.df.shape,
@@ -137,14 +143,22 @@ def clean_multiple_stocks(stock_data_dict, use_cache=True, save_permanent=True):
     cleaned_data = {}
     
     for ticker, df in stock_data_dict.items():
-        cleaner = StockDataCleaner(df, ticker)
-        cleaned_df = cleaner.clean_data(use_cache=use_cache)
-        
-        # Save permanent file only if requested
-        if save_permanent:
-            cleaner.save_data(use_cache=use_cache)
-        
-        cleaned_data[ticker] = cleaned_df
+        if df is None or df.empty:
+            print(f"[WARNING] Skipping {ticker}: DataFrame is None or empty")
+            continue
+            
+        try:
+            cleaner = StockDataCleaner(df, ticker)
+            cleaned_df = cleaner.clean_data(use_cache=use_cache)
+            
+            # Save permanent file only if requested
+            if save_permanent:
+                cleaner.save_data(use_cache=use_cache)
+            
+            cleaned_data[ticker] = cleaned_df
+        except Exception as e:
+            print(f"[ERROR] Error cleaning {ticker}: {e}")
+            continue
     
     return cleaned_data 
 

@@ -27,6 +27,8 @@ class StockDataAnalyzer:
     """
     
     def __init__(self, df, ticker_name):
+        if df is None or df.empty:
+            raise ValueError(f"DataFrame for {ticker_name} is None or empty")
         self.df = df.copy()
         self.ticker_name = ticker_name
         
@@ -154,6 +156,7 @@ class StockDataAnalyzer:
         
         # Cache the analyzed data if enabled
         if use_cache:
+            cache = get_cache_manager()  # Get cache manager if not already retrieved
             metadata = {
                 'analysis_timestamp': pd.Timestamp.now().isoformat(),
                 'analysis_type': 'basic_analysis',
@@ -179,9 +182,17 @@ def analyze_multiple_stocks(stock_data_dict, use_cache=True):
     results = {}
     
     for ticker, df in stock_data_dict.items():
-        print(f"\n{'='*50}")
-        analyzer = StockDataAnalyzer(df, ticker)
-        analyzer.run_analysis(use_cache=use_cache)
-        results[ticker] = df
+        if df is None or df.empty:
+            print(f"[WARNING] Skipping {ticker}: DataFrame is None or empty")
+            continue
+            
+        try:
+            print(f"\n{'='*50}")
+            analyzer = StockDataAnalyzer(df, ticker)
+            analyzer.run_analysis(use_cache=use_cache)
+            results[ticker] = analyzer.df  # Use analyzer.df instead of original df
+        except Exception as e:
+            print(f"[ERROR] Error analyzing {ticker}: {e}")
+            continue
     
     return results 

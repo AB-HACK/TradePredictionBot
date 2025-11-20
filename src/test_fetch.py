@@ -4,7 +4,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from src.data import fetch_multiple_stocksp
+from src.data import fetch_multiple_stocks
 from src.data_cleaning import clean_multiple_stocks
 from src.analysis_template import analyze_multiple_stocks
 

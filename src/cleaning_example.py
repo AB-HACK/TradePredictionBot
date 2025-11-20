@@ -13,9 +13,9 @@ import os
 import pandas as pd
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from data import fetch_multiple_stocks
-from data_cleaning import clean_multiple_stocks
-from analysis_template import analyze_multiple_stocks
+from src.data import fetch_multiple_stocks
+from src.data_cleaning import clean_multiple_stocks
+from src.analysis_template import analyze_multiple_stocks
 
 def main():
     """
