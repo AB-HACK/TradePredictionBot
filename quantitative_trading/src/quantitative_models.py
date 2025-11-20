@@ -684,7 +684,11 @@ if __name__ == "__main__":
     tickers = ['AAPL']
     predictors = create_quantitative_pipeline(tickers, target_type='direction')
     
-    # Make predictions
+    # Evaluate models and make predictions
     for ticker, predictor in predictors.items():
+        # Evaluate model performance
+        results = predictor.evaluate_models()
+        
+        # Make predictions
         prediction = predictor.predict(model_name='Random_Forest_Classifier')
         print(f"{ticker} direction prediction: {'UP' if prediction > 0.5 else 'DOWN'}")
