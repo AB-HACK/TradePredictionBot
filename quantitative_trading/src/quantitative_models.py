@@ -15,6 +15,9 @@
 import pandas as pd
 import numpy as np
 import warnings
+import os
+import joblib
+from datetime import datetime
 from sklearn.model_selection import TimeSeriesSplit, train_test_split
 from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
 from sklearn.linear_model import LinearRegression, LogisticRegression
@@ -637,6 +640,90 @@ class QuantitativePredictor:
         
         print(f"[PREDICTION] {self.ticker_name} {self.target_type} prediction: {prediction:.6f}")
         return prediction
+    
+    def save_model(self, model_name='Random_Forest', save_dir='models'):
+        """
+        Save trained model and scaler to disk for deployment
+        
+        Args:
+            model_name: Name of model to save
+            save_dir: Directory to save model files
+        """
+        if model_name not in self.models:
+            print(f"[ERROR] Model {model_name} not found")
+            return False
+        
+        os.makedirs(save_dir, exist_ok=True)
+        
+        model_info = self.models[model_name]
+        model = model_info['model']
+        
+        # Save model
+        model_path = os.path.join(save_dir, f"{self.ticker_name}_{model_name}_{self.target_type}.joblib")
+        joblib.dump(model, model_path)
+        
+        # Save scaler
+        if 'standard' in self.scalers:
+            scaler_path = os.path.join(save_dir, f"{self.ticker_name}_{model_name}_scaler.joblib")
+            joblib.dump(self.scalers['standard'], scaler_path)
+        
+        # Save metadata
+        metadata = {
+            'ticker': self.ticker_name,
+            'model_name': model_name,
+            'target_type': self.target_type,
+            'feature_columns': self.feature_engineer.feature_columns,
+            'accuracy': model_info.get('accuracy', None),
+            'rmse': model_info.get('rmse', None),
+            'r2': model_info.get('r2', None),
+            'saved_at': datetime.now().isoformat()
+        }
+        
+        import json
+        metadata_path = os.path.join(save_dir, f"{self.ticker_name}_{model_name}_metadata.json")
+        with open(metadata_path, 'w') as f:
+            json.dump(metadata, f, indent=2)
+        
+        print(f"[SUCCESS] Model saved to {model_path}")
+        return True
+    
+    @staticmethod
+    def load_model(ticker, model_name, target_type, model_dir='models'):
+        """
+        Load saved model for deployment
+        
+        Args:
+            ticker: Stock ticker symbol
+            model_name: Name of model to load
+            target_type: Target type ('direction', 'returns', 'volatility')
+            model_dir: Directory where models are saved
+        
+        Returns:
+            Dictionary with model, scaler, and metadata
+        """
+        model_path = os.path.join(model_dir, f"{ticker}_{model_name}_{target_type}.joblib")
+        scaler_path = os.path.join(model_dir, f"{ticker}_{model_name}_scaler.joblib")
+        metadata_path = os.path.join(model_dir, f"{ticker}_{model_name}_metadata.json")
+        
+        if not os.path.exists(model_path):
+            print(f"[ERROR] Model file not found: {model_path}")
+            return None
+        
+        model = joblib.load(model_path)
+        scaler = joblib.load(scaler_path) if os.path.exists(scaler_path) else None
+        
+        import json
+        metadata = {}
+        if os.path.exists(metadata_path):
+            with open(metadata_path, 'r') as f:
+                metadata = json.load(f)
+        
+        print(f"[SUCCESS] Model loaded from {model_path}")
+        return {
+            'model': model,
+            'scaler': scaler,
+            'metadata': metadata
+        }
 
 
 def create_quantitative_pipeline(tickers, target_type='returns', prediction_horizon=1):
@@ -684,7 +771,11 @@ if __name__ == "__main__":
     tickers = ['AAPL']
     predictors = create_quantitative_pipeline(tickers, target_type='direction')
     
-    # Make predictions
+    # Evaluate models and make predictions
     for ticker, predictor in predictors.items():
+        # Evaluate model performance
+        results = predictor.evaluate_models()
+        
+        # Make predictions
         prediction = predictor.predict(model_name='Random_Forest_Classifier')
         print(f"{ticker} direction prediction: {'UP' if prediction > 0.5 else 'DOWN'}")
