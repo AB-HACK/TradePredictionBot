@@ -16,6 +16,7 @@ import pandas as pd
 import numpy as np
 import warnings
 import os
+import sys
 import joblib
 from datetime import datetime
 from sklearn.model_selection import TimeSeriesSplit, train_test_split
@@ -25,7 +26,11 @@ from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score, accuracy_score, precision_score, recall_score, f1_score, classification_report, confusion_matrix
 from sklearn.feature_selection import SelectKBest, f_regression
 import xgboost as xgb
-from .cache_manager import get_cache_manager
+# Use parent cache_manager instead of duplicate
+parent_src = os.path.join(os.path.dirname(__file__), '..', '..', 'src')
+if parent_src not in sys.path:
+    sys.path.insert(0, parent_src)
+from cache_manager import get_cache_manager
 warnings.filterwarnings('ignore')
 
 class QuantitativeFeatureEngineer:
@@ -740,9 +745,14 @@ def create_quantitative_pipeline(tickers, target_type='returns', prediction_hori
     """
     print(f"Creating quantitative pipeline for {len(tickers)} stocks...")
     
-    # Import your existing modules
-    from .data import fetch_multiple_stocks
-    from .data_cleaning import clean_multiple_stocks
+    # Import your existing modules from parent src directory
+    import sys
+    import os
+    parent_src = os.path.join(os.path.dirname(__file__), '..', '..', 'src')
+    if parent_src not in sys.path:
+        sys.path.insert(0, parent_src)
+    from data import fetch_multiple_stocks
+    from data_cleaning import clean_multiple_stocks
     
     # Fetch and clean data
     print("Fetching stock data...")
