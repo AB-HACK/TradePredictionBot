@@ -16,8 +16,13 @@ import pandas as pd
 import numpy as np
 import warnings
 import os
+import sys
 import joblib
+import logging
+import json
+import hashlib
 from datetime import datetime
+from typing import Dict, Any, Optional, List, Tuple
 from sklearn.model_selection import TimeSeriesSplit, train_test_split
 from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
 from sklearn.linear_model import LinearRegression, LogisticRegression
@@ -25,8 +30,278 @@ from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score, accuracy_score, precision_score, recall_score, f1_score, classification_report, confusion_matrix
 from sklearn.feature_selection import SelectKBest, f_regression
 import xgboost as xgb
-from .cache_manager import get_cache_manager
+
+# Use parent cache_manager instead of duplicate
+parent_src = os.path.join(os.path.dirname(__file__), '..', '..', 'src')
+if parent_src not in sys.path:
+    sys.path.insert(0, parent_src)
+from cache_manager import get_cache_manager
 warnings.filterwarnings('ignore')
+
+# =============================================================================
+# PRODUCTION FEATURES: Logging, Configuration, Validation, Monitoring
+# =============================================================================
+
+# Setup logging
+def setup_logger(name='quantitative_models', log_file='logs/model.log', level=logging.INFO):
+    """Setup logging configuration"""
+    os.makedirs(os.path.dirname(log_file) if os.path.dirname(log_file) else '.', exist_ok=True)
+    logger = logging.getLogger(name)
+    logger.setLevel(level)
+    
+    if not logger.handlers:
+        # File handler
+        fh = logging.FileHandler(log_file)
+        fh.setLevel(level)
+        # Console handler
+        ch = logging.StreamHandler()
+        ch.setLevel(logging.WARNING)
+        # Formatter
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        fh.setFormatter(formatter)
+        ch.setFormatter(formatter)
+        logger.addHandler(fh)
+        logger.addHandler(ch)
+    
+    return logger
+
+logger = setup_logger()
+
+# Configuration management
+class Config:
+    """Configuration management for model settings"""
+    def __init__(self, config_file='config.json'):
+        self.config_file = config_file
+        self.config = self._load_config()
+    
+    def _load_config(self) -> Dict[str, Any]:
+        """Load configuration from file or use defaults"""
+        default_config = {
+            'model': {
+                'test_size': 0.2,
+                'random_state': 42,
+                'n_estimators': 100,
+                'max_depth': None,
+                'min_samples_split': 2
+            },
+            'data': {
+                'min_data_points': 100,
+                'max_missing_pct': 0.1,
+                'validation_enabled': True
+            },
+            'security': {
+                'validate_inputs': True,
+                'max_ticker_length': 10,
+                'sanitize_inputs': True
+            },
+            'monitoring': {
+                'log_predictions': True,
+                'log_errors': True,
+                'performance_tracking': True
+            },
+            'model_versioning': {
+                'enabled': True,
+                'version_format': 'v{timestamp}_{hash}',
+                'keep_versions': 5
+            }
+        }
+        
+        if os.path.exists(self.config_file):
+            try:
+                with open(self.config_file, 'r') as f:
+                    user_config = json.load(f)
+                    # Merge with defaults
+                    for key, value in user_config.items():
+                        if key in default_config:
+                            default_config[key].update(value)
+                        else:
+                            default_config[key] = value
+                logger.info(f"Loaded configuration from {self.config_file}")
+            except Exception as e:
+                logger.warning(f"Error loading config: {e}. Using defaults.")
+        else:
+            logger.info("Using default configuration")
+        
+        return default_config
+    
+    def get(self, key: str, default=None):
+        """Get configuration value"""
+        keys = key.split('.')
+        value = self.config
+        for k in keys:
+            if isinstance(value, dict):
+                value = value.get(k, default)
+            else:
+                return default
+        return value
+    
+    def save(self):
+        """Save current configuration to file"""
+        try:
+            with open(self.config_file, 'w') as f:
+                json.dump(self.config, f, indent=2)
+            logger.info(f"Configuration saved to {self.config_file}")
+        except Exception as e:
+            logger.error(f"Error saving config: {e}")
+
+# Global config instance
+config = Config()
+
+# Data validation
+class DataValidator:
+    """Validate data inputs and model data"""
+    
+    @staticmethod
+    def validate_ticker(ticker: str) -> bool:
+        """Validate ticker symbol"""
+        if not isinstance(ticker, str):
+            logger.error(f"Invalid ticker type: {type(ticker)}")
+            return False
+        
+        max_length = config.get('security.max_ticker_length', 10)
+        if len(ticker) > max_length:
+            logger.error(f"Ticker too long: {ticker}")
+            return False
+        
+        # Sanitize: only alphanumeric and dots
+        if config.get('security.sanitize_inputs', True):
+            if not ticker.replace('.', '').isalnum():
+                logger.error(f"Invalid ticker format: {ticker}")
+                return False
+        
+        return True
+    
+    @staticmethod
+    def validate_dataframe(df: pd.DataFrame, min_rows: int = None, required_cols: List[str] = None) -> Tuple[bool, str]:
+        """Validate DataFrame structure and content"""
+        if df is None:
+            return False, "DataFrame is None"
+        
+        if df.empty:
+            return False, "DataFrame is empty"
+        
+        min_rows = min_rows or config.get('data.min_data_points', 100)
+        if len(df) < min_rows:
+            return False, f"Insufficient data: {len(df)} rows (minimum: {min_rows})"
+        
+        required_cols = required_cols or ['Open', 'High', 'Low', 'Close', 'Volume']
+        missing_cols = [col for col in required_cols if col not in df.columns]
+        if missing_cols:
+            return False, f"Missing required columns: {missing_cols}"
+        
+        # Check for excessive missing values
+        max_missing = config.get('data.max_missing_pct', 0.1)
+        for col in required_cols:
+            missing_pct = df[col].isna().sum() / len(df)
+            if missing_pct > max_missing:
+                return False, f"Too many missing values in {col}: {missing_pct:.1%}"
+        
+        return True, "Valid"
+    
+    @staticmethod
+    def validate_features(features: np.ndarray, expected_shape: Tuple = None) -> Tuple[bool, str]:
+        """Validate feature array"""
+        if features is None:
+            return False, "Features are None"
+        
+        if not isinstance(features, np.ndarray):
+            return False, f"Features must be numpy array, got {type(features)}"
+        
+        if features.size == 0:
+            return False, "Features array is empty"
+        
+        if np.any(np.isnan(features)) or np.any(np.isinf(features)):
+            return False, "Features contain NaN or Inf values"
+        
+        if expected_shape and features.shape != expected_shape:
+            return False, f"Shape mismatch: expected {expected_shape}, got {features.shape}"
+        
+        return True, "Valid"
+
+# Model versioning
+class ModelVersionManager:
+    """Manage model versions and metadata"""
+    
+    @staticmethod
+    def generate_version(model_name: str, ticker: str, metadata: Dict) -> str:
+        """Generate version string for model"""
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        # Create hash from metadata
+        metadata_str = json.dumps(metadata, sort_keys=True)
+        hash_obj = hashlib.md5(metadata_str.encode())
+        hash_short = hash_obj.hexdigest()[:8]
+        return f"{ticker}_{model_name}_{timestamp}_{hash_short}"
+    
+    @staticmethod
+    def save_version_info(version: str, metadata: Dict, save_dir: str):
+        """Save version information"""
+        version_file = os.path.join(save_dir, 'versions.json')
+        versions = []
+        
+        if os.path.exists(version_file):
+            try:
+                with open(version_file, 'r') as f:
+                    versions = json.load(f)
+            except:
+                versions = []
+        
+        versions.append({
+            'version': version,
+            'created_at': datetime.now().isoformat(),
+            'metadata': metadata
+        })
+        
+        # Keep only last N versions
+        keep_versions = config.get('model_versioning.keep_versions', 5)
+        versions = versions[-keep_versions:]
+        
+        with open(version_file, 'w') as f:
+            json.dump(versions, f, indent=2)
+        
+        logger.info(f"Saved version info: {version}")
+
+# Performance monitoring
+class PerformanceMonitor:
+    """Monitor model performance and predictions"""
+    
+    def __init__(self, log_file='logs/performance.log'):
+        self.log_file = log_file
+        os.makedirs(os.path.dirname(log_file) if os.path.dirname(log_file) else '.', exist_ok=True)
+        self.predictions_log = []
+    
+    def log_prediction(self, ticker: str, model_name: str, prediction: Any, confidence: float = None):
+        """Log prediction for monitoring"""
+        if config.get('monitoring.log_predictions', True):
+            entry = {
+                'timestamp': datetime.now().isoformat(),
+                'ticker': ticker,
+                'model': model_name,
+                'prediction': float(prediction) if isinstance(prediction, (int, float, np.number)) else str(prediction),
+                'confidence': float(confidence) if confidence else None
+            }
+            self.predictions_log.append(entry)
+            
+            # Write to file periodically
+            if len(self.predictions_log) >= 10:
+                self._flush_logs()
+    
+    def _flush_logs(self):
+        """Write logs to file"""
+        try:
+            with open(self.log_file, 'a') as f:
+                for entry in self.predictions_log:
+                    f.write(json.dumps(entry) + '\n')
+            self.predictions_log = []
+        except Exception as e:
+            logger.error(f"Error writing performance logs: {e}")
+    
+    def log_error(self, error_type: str, message: str, context: Dict = None):
+        """Log errors for monitoring"""
+        if config.get('monitoring.log_errors', True):
+            logger.error(f"{error_type}: {message}", extra=context or {})
+
+# Global monitor instance
+monitor = PerformanceMonitor()
 
 class QuantitativeFeatureEngineer:
     """
@@ -222,24 +497,59 @@ class QuantitativeFeatureEngineer:
 class QuantitativePredictor:
     """
     Main class for quantitative prediction models
+    
+    Features:
+    - Error handling with comprehensive logging
+    - Data validation at each step
+    - Configuration management
+    - Performance monitoring
+    - Model versioning
+    - Security validation
     """
     
     def __init__(self, df, ticker_name, target_type='returns'):
         """
-        Initialize predictor
+        Initialize predictor with validation and error handling
         
         Args:
             df: DataFrame with features
             ticker_name: Stock ticker
             target_type: 'returns', 'direction', or 'volatility'
+        
+        Raises:
+            ValueError: If inputs are invalid
         """
-        self.df = df.copy()
-        self.ticker_name = ticker_name
-        self.target_type = target_type
-        self.feature_engineer = QuantitativeFeatureEngineer(df, ticker_name)
-        self.models = {}
-        self.scalers = {}
-        self.feature_importance = {}
+        try:
+            # Security: Validate ticker
+            if not DataValidator.validate_ticker(ticker_name):
+                raise ValueError(f"Invalid ticker: {ticker_name}")
+            
+            # Data validation
+            is_valid, error_msg = DataValidator.validate_dataframe(df)
+            if not is_valid:
+                raise ValueError(f"Invalid DataFrame: {error_msg}")
+            
+            # Validate target type
+            valid_targets = ['returns', 'direction', 'volatility']
+            if target_type not in valid_targets:
+                raise ValueError(f"Invalid target_type: {target_type}. Must be one of {valid_targets}")
+            
+            self.df = df.copy()
+            self.ticker_name = ticker_name
+            self.target_type = target_type
+            self.feature_engineer = QuantitativeFeatureEngineer(df, ticker_name)
+            self.models = {}
+            self.scalers = {}
+            self.feature_importance = {}
+            self.version = None
+            self.training_metadata = {}
+            
+            logger.info(f"Initialized predictor for {ticker_name} with target_type={target_type}")
+            
+        except Exception as e:
+            logger.error(f"Error initializing predictor for {ticker_name}: {e}", exc_info=True)
+            monitor.log_error('InitializationError', str(e), {'ticker': ticker_name, 'target_type': target_type})
+            raise
         
     def prepare_data(self, prediction_horizon=1, use_cache=True):
         """
@@ -291,48 +601,95 @@ class QuantitativePredictor:
     
     def train_models(self, test_size=0.2, use_cache=True):
         """
-        Train multiple machine learning models
+        Train multiple machine learning models with validation and error handling
         
         Args:
-            test_size: Proportion of data for testing
+            test_size: Proportion of data for testing (from config if not provided)
             use_cache: Whether to use caching
+        
+        Returns:
+            Dictionary of trained models
+        
+        Raises:
+            ValueError: If training fails
         """
-        print(f"Training models for {self.ticker_name}...")
-        
-        # Prepare features and target
-        feature_cols = self.feature_engineer.feature_columns
-        X = self.df[feature_cols].dropna()
-        y = self.df['Target'].loc[X.index].dropna()
-        
-        # Align X and y
-        common_index = X.index.intersection(y.index)
-        X = X.loc[common_index]
-        y = y.loc[common_index]
-        
-        if len(X) == 0:
-            print(f"[ERROR] No valid data for training {self.ticker_name}")
-            return None
-        
-        # Time series split
-        split_point = int(len(X) * (1 - test_size))
-        X_train, X_test = X.iloc[:split_point], X.iloc[split_point:]
-        y_train, y_test = y.iloc[:split_point], y.iloc[split_point:]
-        
-        # Scale features
-        scaler = StandardScaler()
-        X_train_scaled = scaler.fit_transform(X_train)
-        X_test_scaled = scaler.transform(X_test)
-        
-        self.scalers['standard'] = scaler
-        
-        # Train models based on target type
-        if self.target_type in ['returns', 'volatility']:
-            self._train_regression_models(X_train_scaled, X_test_scaled, y_train, y_test)
-        else:
-            self._train_classification_models(X_train_scaled, X_test_scaled, y_train, y_test)
-        
-        print(f"[SUCCESS] Models trained for {self.ticker_name}")
-        return self.models
+        try:
+            # Get test_size from config if not provided
+            test_size = test_size or config.get('model.test_size', 0.2)
+            
+            # Validate test_size
+            if not 0 < test_size < 1:
+                raise ValueError(f"Invalid test_size: {test_size}. Must be between 0 and 1")
+            
+            logger.info(f"Training models for {self.ticker_name} (test_size={test_size})")
+            
+            # Prepare features and target
+            feature_cols = self.feature_engineer.feature_columns
+            if len(feature_cols) == 0:
+                raise ValueError("No features available. Run prepare_data() first.")
+            
+            X = self.df[feature_cols].dropna()
+            y = self.df['Target'].loc[X.index].dropna()
+            
+            # Align X and y
+            common_index = X.index.intersection(y.index)
+            X = X.loc[common_index]
+            y = y.loc[common_index]
+            
+            # Validate data
+            if len(X) == 0:
+                raise ValueError(f"No valid data for training {self.ticker_name}")
+            
+            # Validate features
+            is_valid, error_msg = DataValidator.validate_features(X.values)
+            if not is_valid:
+                raise ValueError(f"Invalid features: {error_msg}")
+            
+            # Time series split
+            split_point = int(len(X) * (1 - test_size))
+            if split_point < 10:
+                raise ValueError(f"Insufficient data for training: {split_point} samples")
+            
+            X_train, X_test = X.iloc[:split_point], X.iloc[split_point:]
+            y_train, y_test = y.iloc[:split_point], y.iloc[split_point:]
+            
+            # Store training metadata
+            self.training_metadata = {
+                'train_samples': len(X_train),
+                'test_samples': len(X_test),
+                'features_count': len(feature_cols),
+                'test_size': test_size,
+                'training_timestamp': datetime.now().isoformat()
+            }
+            
+            # Scale features
+            scaler = StandardScaler()
+            X_train_scaled = scaler.fit_transform(X_train)
+            X_test_scaled = scaler.transform(X_test)
+            
+            # Validate scaled features
+            is_valid, error_msg = DataValidator.validate_features(X_train_scaled)
+            if not is_valid:
+                raise ValueError(f"Invalid scaled features: {error_msg}")
+            
+            self.scalers['standard'] = scaler
+            
+            # Train models based on target type
+            if self.target_type in ['returns', 'volatility']:
+                self._train_regression_models(X_train_scaled, X_test_scaled, y_train, y_test)
+            else:
+                self._train_classification_models(X_train_scaled, X_test_scaled, y_train, y_test)
+            
+            if len(self.models) == 0:
+                raise ValueError("No models were successfully trained")
+            
+            logger.info(f"Successfully trained {len(self.models)} models for {self.ticker_name}")
+            return self.models
+            
+        except Exception as e:
+            logger.error(f"Error training models for {self.ticker_name}: {e}", exc_info=True)
+            monitor.log_error('TrainingError', str(e), {'ticker': self.ticker_name})
+            raise
     
     def _train_regression_models(self, X_train, X_test, y_train, y_test):
         """Train regression models"""
@@ -610,120 +967,269 @@ class QuantitativePredictor:
         
         return results
     
-    def predict(self, model_name='Random_Forest', days_ahead=1):
+    def predict(self, model_name='Random_Forest', days_ahead=1, return_confidence=False):
         """
-        Make predictions using trained model
+        Make predictions using trained model with validation and monitoring
         
         Args:
             model_name: Name of model to use
             days_ahead: Number of days to predict ahead
+            return_confidence: Whether to return confidence score
+        
+        Returns:
+            Prediction value (and confidence if requested)
+        
+        Raises:
+            ValueError: If prediction fails
         """
-        if model_name not in self.models:
-            print(f"[ERROR] Model {model_name} not found")
-            return None
-        
-        model_info = self.models[model_name]
-        model = model_info['model']
-        
-        # Get latest features
-        feature_cols = self.feature_engineer.feature_columns
-        latest_features = self.df[feature_cols].iloc[-1:].values
-        
-        # Scale features
-        if 'standard' in self.scalers:
-            latest_features_scaled = self.scalers['standard'].transform(latest_features)
-        else:
-            latest_features_scaled = latest_features
-        
-        # Make prediction
-        prediction = model.predict(latest_features_scaled)[0]
-        
-        print(f"[PREDICTION] {self.ticker_name} {self.target_type} prediction: {prediction:.6f}")
-        return prediction
+        try:
+            # Validate model exists
+            if model_name not in self.models:
+                raise ValueError(f"Model {model_name} not found. Available: {list(self.models.keys())}")
+            
+            model_info = self.models[model_name]
+            model = model_info['model']
+            
+            # Get latest features
+            feature_cols = self.feature_engineer.feature_columns
+            if len(feature_cols) == 0:
+                raise ValueError("No features available. Run prepare_data() first.")
+            
+            latest_features = self.df[feature_cols].iloc[-1:].values
+            
+            # Validate features
+            is_valid, error_msg = DataValidator.validate_features(latest_features)
+            if not is_valid:
+                raise ValueError(f"Invalid features for prediction: {error_msg}")
+            
+            # Scale features
+            if 'standard' in self.scalers:
+                latest_features_scaled = self.scalers['standard'].transform(latest_features)
+            else:
+                latest_features_scaled = latest_features
+            
+            # Make prediction
+            prediction = model.predict(latest_features_scaled)[0]
+            
+            # Get confidence if available
+            confidence = None
+            if hasattr(model, 'predict_proba'):
+                proba = model.predict_proba(latest_features_scaled)[0]
+                confidence = float(np.max(proba))
+            elif hasattr(model, 'feature_importances_'):
+                # For tree models, use feature importance as proxy
+                confidence = 0.7  # Default confidence
+            
+            # Log prediction for monitoring
+            monitor.log_prediction(self.ticker_name, model_name, prediction, confidence)
+            
+            logger.info(f"Prediction for {self.ticker_name}: {prediction:.6f} (confidence: {confidence:.2f})")
+            
+            if return_confidence:
+                return prediction, confidence
+            return prediction
+            
+        except Exception as e:
+            logger.error(f"Error making prediction for {self.ticker_name}: {e}", exc_info=True)
+            monitor.log_error('PredictionError', str(e), {'ticker': self.ticker_name, 'model': model_name})
+            raise
     
-    def save_model(self, model_name='Random_Forest', save_dir='models'):
+    def save_model(self, model_name='Random_Forest', save_dir='models', version=None):
         """
-        Save trained model and scaler to disk for deployment
+        Save trained model with versioning, validation, and error handling
         
         Args:
             model_name: Name of model to save
             save_dir: Directory to save model files
+            version: Optional version string (auto-generated if not provided)
+        
+        Returns:
+            str: Version string if successful, None otherwise
         """
-        if model_name not in self.models:
-            print(f"[ERROR] Model {model_name} not found")
-            return False
-        
-        os.makedirs(save_dir, exist_ok=True)
-        
-        model_info = self.models[model_name]
-        model = model_info['model']
-        
-        # Save model
-        model_path = os.path.join(save_dir, f"{self.ticker_name}_{model_name}_{self.target_type}.joblib")
-        joblib.dump(model, model_path)
-        
-        # Save scaler
-        if 'standard' in self.scalers:
-            scaler_path = os.path.join(save_dir, f"{self.ticker_name}_{model_name}_scaler.joblib")
-            joblib.dump(self.scalers['standard'], scaler_path)
-        
-        # Save metadata
-        metadata = {
-            'ticker': self.ticker_name,
-            'model_name': model_name,
-            'target_type': self.target_type,
-            'feature_columns': self.feature_engineer.feature_columns,
-            'accuracy': model_info.get('accuracy', None),
-            'rmse': model_info.get('rmse', None),
-            'r2': model_info.get('r2', None),
-            'saved_at': datetime.now().isoformat()
-        }
-        
-        import json
-        metadata_path = os.path.join(save_dir, f"{self.ticker_name}_{model_name}_metadata.json")
-        with open(metadata_path, 'w') as f:
-            json.dump(metadata, f, indent=2)
-        
-        print(f"[SUCCESS] Model saved to {model_path}")
-        return True
+        try:
+            # Validate model exists
+            if model_name not in self.models:
+                raise ValueError(f"Model {model_name} not found. Available: {list(self.models.keys())}")
+            
+            # Validate save directory
+            if not isinstance(save_dir, str) or len(save_dir) == 0:
+                raise ValueError(f"Invalid save_dir: {save_dir}")
+            
+            os.makedirs(save_dir, exist_ok=True)
+            
+            model_info = self.models[model_name]
+            model = model_info['model']
+            
+            # Generate version if not provided
+            if version is None and config.get('model_versioning.enabled', True):
+                metadata_for_version = {
+                    'model_name': model_name,
+                    'target_type': self.target_type,
+                    'accuracy': model_info.get('accuracy'),
+                    'rmse': model_info.get('rmse'),
+                    'r2': model_info.get('r2'),
+                    **self.training_metadata
+                }
+                version = ModelVersionManager.generate_version(model_name, self.ticker_name, metadata_for_version)
+                self.version = version
+                ModelVersionManager.save_version_info(version, metadata_for_version, save_dir)
+            
+            # Save model
+            model_filename = f"{self.ticker_name}_{model_name}_{self.target_type}"
+            if version:
+                model_filename = f"{model_filename}_{version}"
+            model_path = os.path.join(save_dir, f"{model_filename}.joblib")
+            
+            joblib.dump(model, model_path)
+            logger.info(f"Saved model to {model_path}")
+            
+            # Save scaler
+            if 'standard' in self.scalers:
+                scaler_filename = f"{self.ticker_name}_{model_name}_scaler"
+                if version:
+                    scaler_filename = f"{scaler_filename}_{version}"
+                scaler_path = os.path.join(save_dir, f"{scaler_filename}.joblib")
+                joblib.dump(self.scalers['standard'], scaler_path)
+                logger.info(f"Saved scaler to {scaler_path}")
+            
+            # Save comprehensive metadata
+            metadata = {
+                'ticker': self.ticker_name,
+                'model_name': model_name,
+                'target_type': self.target_type,
+                'version': version,
+                'feature_columns': self.feature_engineer.feature_columns,
+                'accuracy': model_info.get('accuracy', None),
+                'rmse': model_info.get('rmse', None),
+                'r2': model_info.get('r2', None),
+                'precision': model_info.get('precision', None),
+                'recall': model_info.get('recall', None),
+                'f1_score': model_info.get('f1_score', None),
+                'training_metadata': self.training_metadata,
+                'saved_at': datetime.now().isoformat(),
+                'python_version': sys.version,
+                'dependencies': {
+                    'pandas': pd.__version__,
+                    'numpy': np.__version__,
+                    'sklearn': None,  # Would need to import sklearn.__version__
+                    'xgboost': None
+                }
+            }
+            
+            metadata_filename = f"{self.ticker_name}_{model_name}_metadata"
+            if version:
+                metadata_filename = f"{metadata_filename}_{version}"
+            metadata_path = os.path.join(save_dir, f"{metadata_filename}.json")
+            
+            with open(metadata_path, 'w') as f:
+                json.dump(metadata, f, indent=2, default=str)
+            
+            logger.info(f"Model saved successfully: {version or 'no version'}")
+            return version
+            
+        except Exception as e:
+            logger.error(f"Error saving model for {self.ticker_name}: {e}", exc_info=True)
+            monitor.log_error('ModelSaveError', str(e), {'ticker': self.ticker_name, 'model': model_name})
+            return None
     
     @staticmethod
-    def load_model(ticker, model_name, target_type, model_dir='models'):
+    def load_model(ticker, model_name, target_type, model_dir='models', version=None):
         """
-        Load saved model for deployment
+        Load saved model with validation and error handling
         
         Args:
             ticker: Stock ticker symbol
             model_name: Name of model to load
             target_type: Target type ('direction', 'returns', 'volatility')
             model_dir: Directory where models are saved
+            version: Optional version string (loads latest if not provided)
         
         Returns:
             Dictionary with model, scaler, and metadata
+        
+        Raises:
+            FileNotFoundError: If model file not found
+            ValueError: If model loading fails
         """
-        model_path = os.path.join(model_dir, f"{ticker}_{model_name}_{target_type}.joblib")
-        scaler_path = os.path.join(model_dir, f"{ticker}_{model_name}_scaler.joblib")
-        metadata_path = os.path.join(model_dir, f"{ticker}_{model_name}_metadata.json")
-        
-        if not os.path.exists(model_path):
-            print(f"[ERROR] Model file not found: {model_path}")
-            return None
-        
-        model = joblib.load(model_path)
-        scaler = joblib.load(scaler_path) if os.path.exists(scaler_path) else None
-        
-        import json
-        metadata = {}
-        if os.path.exists(metadata_path):
-            with open(metadata_path, 'r') as f:
-                metadata = json.load(f)
-        
-        print(f"[SUCCESS] Model loaded from {model_path}")
-        return {
-            'model': model,
-            'scaler': scaler,
-            'metadata': metadata
-        }
+        try:
+            # Validate inputs
+            if not DataValidator.validate_ticker(ticker):
+                raise ValueError(f"Invalid ticker: {ticker}")
+            
+            valid_targets = ['returns', 'direction', 'volatility']
+            if target_type not in valid_targets:
+                raise ValueError(f"Invalid target_type: {target_type}")
+            
+            # Construct file paths
+            if version:
+                model_filename = f"{ticker}_{model_name}_{target_type}_{version}"
+            else:
+                model_filename = f"{ticker}_{model_name}_{target_type}"
+            
+            model_path = os.path.join(model_dir, f"{model_filename}.joblib")
+            scaler_filename = f"{ticker}_{model_name}_scaler"
+            if version:
+                scaler_filename = f"{scaler_filename}_{version}"
+            scaler_path = os.path.join(model_dir, f"{scaler_filename}.joblib")
+            metadata_filename = f"{ticker}_{model_name}_metadata"
+            if version:
+                metadata_filename = f"{metadata_filename}_{version}"
+            metadata_path = os.path.join(model_dir, f"{metadata_filename}.json")
+            
+            # Check if model exists
+            if not os.path.exists(model_path):
+                # Try to find latest version
+                if not version:
+                    versions_file = os.path.join(model_dir, 'versions.json')
+                    if os.path.exists(versions_file):
+                        with open(versions_file, 'r') as f:
+                            versions = json.load(f)
+                            # Find matching version
+                            for v in reversed(versions):
+                                if (v['metadata'].get('ticker') == ticker and 
+                                    v['metadata'].get('model_name') == model_name):
+                                    version = v['version']
+                                    return QuantitativePredictor.load_model(ticker, model_name, target_type, model_dir, version)
+                
+                raise FileNotFoundError(f"Model file not found: {model_path}")
+            
+            # Load model
+            logger.info(f"Loading model from {model_path}")
+            model = joblib.load(model_path)
+            
+            # Load scaler
+            scaler = None
+            if os.path.exists(scaler_path):
+                scaler = joblib.load(scaler_path)
+                logger.info(f"Loaded scaler from {scaler_path}")
+            else:
+                logger.warning(f"Scaler file not found: {scaler_path}")
+            
+            # Load metadata
+            metadata = {}
+            if os.path.exists(metadata_path):
+                with open(metadata_path, 'r') as f:
+                    metadata = json.load(f)
+                logger.info(f"Loaded metadata: version={metadata.get('version')}")
+            else:
+                logger.warning(f"Metadata file not found: {metadata_path}")
+            
+            # Validate loaded model
+            if model is None:
+                raise ValueError("Loaded model is None")
+            
+            logger.info(f"Successfully loaded model for {ticker}")
+            return {
+                'model': model,
+                'scaler': scaler,
+                'metadata': metadata,
+                'version': version or metadata.get('version')
+            }
+            
+        except Exception as e:
+            logger.error(f"Error loading model for {ticker}: {e}", exc_info=True)
+            monitor.log_error('ModelLoadError', str(e), {'ticker': ticker, 'model': model_name})
+            raise
 
 
 def create_quantitative_pipeline(tickers, target_type='returns', prediction_horizon=1):
@@ -740,9 +1246,14 @@ def create_quantitative_pipeline(tickers, target_type='returns', prediction_hori
     """
     print(f"Creating quantitative pipeline for {len(tickers)} stocks...")
     
-    # Import your existing modules
-    from .data import fetch_multiple_stocks
-    from .data_cleaning import clean_multiple_stocks
+    # Import your existing modules from parent src directory
+    import sys
+    import os
+    parent_src = os.path.join(os.path.dirname(__file__), '..', '..', 'src')
+    if parent_src not in sys.path:
+        sys.path.insert(0, parent_src)
+    from data import fetch_multiple_stocks
+    from data_cleaning import clean_multiple_stocks
     
     # Fetch and clean data
     print("Fetching stock data...")

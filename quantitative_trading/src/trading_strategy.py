@@ -16,7 +16,13 @@ import pandas as pd
 import numpy as np
 import warnings
 from typing import Dict, List, Tuple, Optional
-from .cache_manager import get_cache_manager
+# Use parent cache_manager instead of duplicate
+import sys
+import os
+parent_src = os.path.join(os.path.dirname(__file__), '..', '..', 'src')
+if parent_src not in sys.path:
+    sys.path.insert(0, parent_src)
+from cache_manager import get_cache_manager
 warnings.filterwarnings('ignore')
 
 class TradingSignal:
