@@ -127,3 +127,20 @@ dmypy.json
 !requirements.txt
 cleaned_*.csv
 
+# Logs
+logs/
+*.log
+
+# Config (keep example, ignore actual)
+config.json
+!config.json.example
+
+# Model files (large, version controlled separately)
+models/
+*.joblib
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+

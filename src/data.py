@@ -2,7 +2,23 @@
 import numpy as np
 import yfinance as yf
 import pandas as pd
+import logging
+import re
 from .cache_manager import get_cache_manager
+
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+def validate_ticker(ticker):
+    """Validate ticker symbol format"""
+    if not isinstance(ticker, str):
+        return False, "Ticker must be a string"
+    if len(ticker) > 10:
+        return False, "Ticker too long (max 10 characters)"
+    if not re.match(r'^[A-Z0-9.]+$', ticker.upper()):
+        return False, "Invalid ticker format (alphanumeric and dots only)"
+    return True, "Valid"
 
 def fetch_live_data(ticker, period='1d', interval='1m', use_cache=True):
     """
@@ -18,6 +34,26 @@ def fetch_live_data(ticker, period='1d', interval='1m', use_cache=True):
         pd.DataFrame: Stock data with OHLCV columns
     """
     try:
+        # Validate ticker
+        is_valid, error_msg = validate_ticker(ticker)
+        if not is_valid:
+            logger.error(f"Invalid ticker {ticker}: {error_msg}")
+            return None
+        
+        # Validate period and interval
+        valid_periods = ['1d', '5d', '1mo', '3mo', '6mo', '1y', '2y', '5y', '10y', 'ytd', 'max']
+        valid_intervals = ['1m', '2m', '5m', '15m', '30m', '60m', '90m', '1h', '1d', '5d', '1wk', '1mo', '3mo']
+        
+        if period not in valid_periods:
+            logger.error(f"Invalid period: {period}. Must be one of {valid_periods}")
+            return None
+        
+        if interval not in valid_intervals:
+            logger.error(f"Invalid interval: {interval}. Must be one of {valid_intervals}")
+            return None
+        
+        logger.info(f"Fetching data for {ticker} (period={period}, interval={interval})")
+        
         # Check cache first if enabled
         if use_cache:
             cache = get_cache_manager()
@@ -45,8 +81,22 @@ def fetch_live_data(ticker, period='1d', interval='1m', use_cache=True):
                 df.columns = df.columns.droplevel(1)
         
         if df is None or df.empty:
-            print(f"[WARNING] No data found for {ticker}")
+            logger.warning(f"No data found for {ticker}")
             return None
+        
+        # Validate data structure
+        required_columns = ['Open', 'High', 'Low', 'Close', 'Volume']
+        missing_cols = [col for col in required_columns if col not in df.columns]
+        if missing_cols:
+            logger.error(f"Missing required columns for {ticker}: {missing_cols}")
+            return None
+        
+        # Validate data quality
+        if len(df) < 1:
+            logger.error(f"Insufficient data for {ticker}: {len(df)} rows")
+            return None
+        
+        logger.info(f"Successfully fetched {len(df)} rows for {ticker}")
         
         # Cache the data if enabled
         if use_cache and df is not None:
@@ -60,8 +110,11 @@ def fetch_live_data(ticker, period='1d', interval='1m', use_cache=True):
             cache.store_dataframe(df, 'raw', ticker, metadata)
         
         return df
+    except yf.exceptions.YFinanceException as e:
+        logger.error(f"YFinance API error for {ticker}: {e}")
+        return None
     except Exception as e:
-        print(f"[ERROR] Error fetching {ticker}: {e}")
+        logger.error(f"Unexpected error fetching {ticker}: {e}", exc_info=True)
         return None
 
 

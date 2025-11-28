@@ -1,0 +1,30 @@
+{
+  "model": {
+    "test_size": 0.2,
+    "random_state": 42,
+    "n_estimators": 100,
+    "max_depth": null,
+    "min_samples_split": 2
+  },
+  "data": {
+    "min_data_points": 100,
+    "max_missing_pct": 0.1,
+    "validation_enabled": true
+  },
+  "security": {
+    "validate_inputs": true,
+    "max_ticker_length": 10,
+    "sanitize_inputs": true
+  },
+  "monitoring": {
+    "log_predictions": true,
+    "log_errors": true,
+    "performance_tracking": true
+  },
+  "model_versioning": {
+    "enabled": true,
+    "version_format": "v{timestamp}_{hash}",
+    "keep_versions": 5
+  }
+}
+
