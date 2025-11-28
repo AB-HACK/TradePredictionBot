@@ -18,9 +18,7 @@ import warnings
 import os
 import sys
 import joblib
-import logging
 import json
-import hashlib
 from datetime import datetime
 from typing import Dict, Any, Optional, List, Tuple
 from sklearn.model_selection import TimeSeriesSplit, train_test_split
@@ -39,269 +37,32 @@ from cache_manager import get_cache_manager
 warnings.filterwarnings('ignore')
 
 # =============================================================================
-# PRODUCTION FEATURES: Logging, Configuration, Validation, Monitoring
+# PRODUCTION FEATURES: Import from separate modules
 # =============================================================================
 
-# Setup logging
-def setup_logger(name='quantitative_models', log_file='logs/model.log', level=logging.INFO):
-    """Setup logging configuration"""
-    os.makedirs(os.path.dirname(log_file) if os.path.dirname(log_file) else '.', exist_ok=True)
-    logger = logging.getLogger(name)
-    logger.setLevel(level)
-    
-    if not logger.handlers:
-        # File handler
-        fh = logging.FileHandler(log_file)
-        fh.setLevel(level)
-        # Console handler
-        ch = logging.StreamHandler()
-        ch.setLevel(logging.WARNING)
-        # Formatter
-        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-        fh.setFormatter(formatter)
-        ch.setFormatter(formatter)
-        logger.addHandler(fh)
-        logger.addHandler(ch)
-    
-    return logger
+try:
+    from .logger_setup import setup_logger
+    from .config_manager import Config
+    from .data_validator import DataValidator
+    from .model_versioning import ModelVersionManager
+    from .performance_monitor import PerformanceMonitor
+except ImportError:
+    # Fallback for direct execution
+    import sys
+    import os
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    sys.path.insert(0, current_dir)
+    from logger_setup import setup_logger
+    from config_manager import Config
+    from data_validator import DataValidator
+    from model_versioning import ModelVersionManager
+    from performance_monitor import PerformanceMonitor
 
+# Initialize global instances
 logger = setup_logger()
-
-# Configuration management
-class Config:
-    """Configuration management for model settings"""
-    def __init__(self, config_file='config.json'):
-        self.config_file = config_file
-        self.config = self._load_config()
-    
-    def _load_config(self) -> Dict[str, Any]:
-        """Load configuration from file or use defaults"""
-        default_config = {
-            'model': {
-                'test_size': 0.2,
-                'random_state': 42,
-                'n_estimators': 100,
-                'max_depth': None,
-                'min_samples_split': 2
-            },
-            'data': {
-                'min_data_points': 100,
-                'max_missing_pct': 0.1,
-                'validation_enabled': True
-            },
-            'security': {
-                'validate_inputs': True,
-                'max_ticker_length': 10,
-                'sanitize_inputs': True
-            },
-            'monitoring': {
-                'log_predictions': True,
-                'log_errors': True,
-                'performance_tracking': True
-            },
-            'model_versioning': {
-                'enabled': True,
-                'version_format': 'v{timestamp}_{hash}',
-                'keep_versions': 5
-            }
-        }
-        
-        if os.path.exists(self.config_file):
-            try:
-                with open(self.config_file, 'r') as f:
-                    user_config = json.load(f)
-                    # Merge with defaults
-                    for key, value in user_config.items():
-                        if key in default_config:
-                            default_config[key].update(value)
-                        else:
-                            default_config[key] = value
-                logger.info(f"Loaded configuration from {self.config_file}")
-            except Exception as e:
-                logger.warning(f"Error loading config: {e}. Using defaults.")
-        else:
-            logger.info("Using default configuration")
-        
-        return default_config
-    
-    def get(self, key: str, default=None):
-        """Get configuration value"""
-        keys = key.split('.')
-        value = self.config
-        for k in keys:
-            if isinstance(value, dict):
-                value = value.get(k, default)
-            else:
-                return default
-        return value
-    
-    def save(self):
-        """Save current configuration to file"""
-        try:
-            with open(self.config_file, 'w') as f:
-                json.dump(self.config, f, indent=2)
-            logger.info(f"Configuration saved to {self.config_file}")
-        except Exception as e:
-            logger.error(f"Error saving config: {e}")
-
-# Global config instance
 config = Config()
-
-# Data validation
-class DataValidator:
-    """Validate data inputs and model data"""
-    
-    @staticmethod
-    def validate_ticker(ticker: str) -> bool:
-        """Validate ticker symbol"""
-        if not isinstance(ticker, str):
-            logger.error(f"Invalid ticker type: {type(ticker)}")
-            return False
-        
-        max_length = config.get('security.max_ticker_length', 10)
-        if len(ticker) > max_length:
-            logger.error(f"Ticker too long: {ticker}")
-            return False
-        
-        # Sanitize: only alphanumeric and dots
-        if config.get('security.sanitize_inputs', True):
-            if not ticker.replace('.', '').isalnum():
-                logger.error(f"Invalid ticker format: {ticker}")
-                return False
-        
-        return True
-    
-    @staticmethod
-    def validate_dataframe(df: pd.DataFrame, min_rows: int = None, required_cols: List[str] = None) -> Tuple[bool, str]:
-        """Validate DataFrame structure and content"""
-        if df is None:
-            return False, "DataFrame is None"
-        
-        if df.empty:
-            return False, "DataFrame is empty"
-        
-        min_rows = min_rows or config.get('data.min_data_points', 100)
-        if len(df) < min_rows:
-            return False, f"Insufficient data: {len(df)} rows (minimum: {min_rows})"
-        
-        required_cols = required_cols or ['Open', 'High', 'Low', 'Close', 'Volume']
-        missing_cols = [col for col in required_cols if col not in df.columns]
-        if missing_cols:
-            return False, f"Missing required columns: {missing_cols}"
-        
-        # Check for excessive missing values
-        max_missing = config.get('data.max_missing_pct', 0.1)
-        for col in required_cols:
-            missing_pct = df[col].isna().sum() / len(df)
-            if missing_pct > max_missing:
-                return False, f"Too many missing values in {col}: {missing_pct:.1%}"
-        
-        return True, "Valid"
-    
-    @staticmethod
-    def validate_features(features: np.ndarray, expected_shape: Tuple = None) -> Tuple[bool, str]:
-        """Validate feature array"""
-        if features is None:
-            return False, "Features are None"
-        
-        if not isinstance(features, np.ndarray):
-            return False, f"Features must be numpy array, got {type(features)}"
-        
-        if features.size == 0:
-            return False, "Features array is empty"
-        
-        if np.any(np.isnan(features)) or np.any(np.isinf(features)):
-            return False, "Features contain NaN or Inf values"
-        
-        if expected_shape and features.shape != expected_shape:
-            return False, f"Shape mismatch: expected {expected_shape}, got {features.shape}"
-        
-        return True, "Valid"
-
-# Model versioning
-class ModelVersionManager:
-    """Manage model versions and metadata"""
-    
-    @staticmethod
-    def generate_version(model_name: str, ticker: str, metadata: Dict) -> str:
-        """Generate version string for model"""
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        # Create hash from metadata
-        metadata_str = json.dumps(metadata, sort_keys=True)
-        hash_obj = hashlib.md5(metadata_str.encode())
-        hash_short = hash_obj.hexdigest()[:8]
-        return f"{ticker}_{model_name}_{timestamp}_{hash_short}"
-    
-    @staticmethod
-    def save_version_info(version: str, metadata: Dict, save_dir: str):
-        """Save version information"""
-        version_file = os.path.join(save_dir, 'versions.json')
-        versions = []
-        
-        if os.path.exists(version_file):
-            try:
-                with open(version_file, 'r') as f:
-                    versions = json.load(f)
-            except:
-                versions = []
-        
-        versions.append({
-            'version': version,
-            'created_at': datetime.now().isoformat(),
-            'metadata': metadata
-        })
-        
-        # Keep only last N versions
-        keep_versions = config.get('model_versioning.keep_versions', 5)
-        versions = versions[-keep_versions:]
-        
-        with open(version_file, 'w') as f:
-            json.dump(versions, f, indent=2)
-        
-        logger.info(f"Saved version info: {version}")
-
-# Performance monitoring
-class PerformanceMonitor:
-    """Monitor model performance and predictions"""
-    
-    def __init__(self, log_file='logs/performance.log'):
-        self.log_file = log_file
-        os.makedirs(os.path.dirname(log_file) if os.path.dirname(log_file) else '.', exist_ok=True)
-        self.predictions_log = []
-    
-    def log_prediction(self, ticker: str, model_name: str, prediction: Any, confidence: float = None):
-        """Log prediction for monitoring"""
-        if config.get('monitoring.log_predictions', True):
-            entry = {
-                'timestamp': datetime.now().isoformat(),
-                'ticker': ticker,
-                'model': model_name,
-                'prediction': float(prediction) if isinstance(prediction, (int, float, np.number)) else str(prediction),
-                'confidence': float(confidence) if confidence else None
-            }
-            self.predictions_log.append(entry)
-            
-            # Write to file periodically
-            if len(self.predictions_log) >= 10:
-                self._flush_logs()
-    
-    def _flush_logs(self):
-        """Write logs to file"""
-        try:
-            with open(self.log_file, 'a') as f:
-                for entry in self.predictions_log:
-                    f.write(json.dumps(entry) + '\n')
-            self.predictions_log = []
-        except Exception as e:
-            logger.error(f"Error writing performance logs: {e}")
-    
-    def log_error(self, error_type: str, message: str, context: Dict = None):
-        """Log errors for monitoring"""
-        if config.get('monitoring.log_errors', True):
-            logger.error(f"{error_type}: {message}", extra=context or {})
-
-# Global monitor instance
-monitor = PerformanceMonitor()
+monitor = PerformanceMonitor(config=config)
+validator = DataValidator(config=config)
 
 class QuantitativeFeatureEngineer:
     """
@@ -521,11 +282,11 @@ class QuantitativePredictor:
         """
         try:
             # Security: Validate ticker
-            if not DataValidator.validate_ticker(ticker_name):
+            if not validator.validate_ticker(ticker_name):
                 raise ValueError(f"Invalid ticker: {ticker_name}")
             
             # Data validation
-            is_valid, error_msg = DataValidator.validate_dataframe(df)
+            is_valid, error_msg = validator.validate_dataframe(df)
             if not is_valid:
                 raise ValueError(f"Invalid DataFrame: {error_msg}")
             
@@ -641,7 +402,7 @@ class QuantitativePredictor:
                 raise ValueError(f"No valid data for training {self.ticker_name}")
             
             # Validate features
-            is_valid, error_msg = DataValidator.validate_features(X.values)
+            is_valid, error_msg = validator.validate_features(X.values)
             if not is_valid:
                 raise ValueError(f"Invalid features: {error_msg}")
             
@@ -668,7 +429,7 @@ class QuantitativePredictor:
             X_test_scaled = scaler.transform(X_test)
             
             # Validate scaled features
-            is_valid, error_msg = DataValidator.validate_features(X_train_scaled)
+            is_valid, error_msg = validator.validate_features(X_train_scaled)
             if not is_valid:
                 raise ValueError(f"Invalid scaled features: {error_msg}")
             
@@ -998,7 +759,7 @@ class QuantitativePredictor:
             latest_features = self.df[feature_cols].iloc[-1:].values
             
             # Validate features
-            is_valid, error_msg = DataValidator.validate_features(latest_features)
+            is_valid, error_msg = validator.validate_features(latest_features)
             if not is_valid:
                 raise ValueError(f"Invalid features for prediction: {error_msg}")
             
@@ -1072,7 +833,7 @@ class QuantitativePredictor:
                 }
                 version = ModelVersionManager.generate_version(model_name, self.ticker_name, metadata_for_version)
                 self.version = version
-                ModelVersionManager.save_version_info(version, metadata_for_version, save_dir)
+                ModelVersionManager.save_version_info(version, metadata_for_version, save_dir, config=config)
             
             # Save model
             model_filename = f"{self.ticker_name}_{model_name}_{self.target_type}"
@@ -1153,7 +914,8 @@ class QuantitativePredictor:
         """
         try:
             # Validate inputs
-            if not DataValidator.validate_ticker(ticker):
+            validator_instance = DataValidator(config)
+            if not validator_instance.validate_ticker(ticker):
                 raise ValueError(f"Invalid ticker: {ticker}")
             
             valid_targets = ['returns', 'direction', 'volatility']
