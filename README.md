@@ -1,6 +1,8 @@
-# Stock Prediction Bot - Data Pipeline
+# Trade Prediction Bot - Complete Quantitative Trading System
 
-A comprehensive Python application for fetching, cleaning, analyzing, and preparing stock market data for predictive modeling. This project includes a temporary caching system for efficient data processing and provides a complete pipeline from raw data to analysis-ready datasets.
+A comprehensive Python-based quantitative trading system that predicts stock market movements using machine learning. This project provides a complete pipeline from raw market data collection to trained predictive models, enabling data-driven trading decisions with professional-grade features including error handling, monitoring, and model versioning.
+
+> 📖 **For detailed project overview, see [PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md)**
 
 ## 📋 Table of Contents
 
