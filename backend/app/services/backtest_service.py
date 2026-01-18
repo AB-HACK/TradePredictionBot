@@ -63,7 +63,8 @@ class BacktestService:
             results = run_complete_strategy(
                 tickers=tickers,
                 target_type=target_type,
-                signal_type=signal_type
+                signal_type=signal_type,
+                initial_capital=initial_capital
             )
             
             # Convert results to API format

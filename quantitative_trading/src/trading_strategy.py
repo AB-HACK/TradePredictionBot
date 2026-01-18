@@ -531,7 +531,7 @@ class Backtester:
         print(f"  Profit Factor: {results['profit_factor']:.2f}")
 
 
-def run_complete_strategy(tickers, target_type='direction', signal_type='direction'):
+def run_complete_strategy(tickers, target_type='direction', signal_type='direction', initial_capital=100000):
     """
     Run complete quantitative trading strategy
     
@@ -539,6 +539,7 @@ def run_complete_strategy(tickers, target_type='direction', signal_type='directi
         tickers: List of stock tickers
         target_type: Model target type ('returns', 'direction', 'volatility')
         signal_type: Signal generation type ('direction', 'momentum', 'mean_reversion')
+        initial_capital: Starting capital for backtesting (default: 100000)
     
     Returns:
         Dictionary with results for each ticker
@@ -567,11 +568,11 @@ def run_complete_strategy(tickers, target_type='direction', signal_type='directi
             continue
         
         # Set up position sizing and risk management
-        position_sizer = PositionSizer(method='kelly', initial_capital=100000)
+        position_sizer = PositionSizer(method='kelly', initial_capital=initial_capital)
         risk_manager = RiskManager(stop_loss_pct=0.05, take_profit_pct=0.10)
         
         # Run backtest
-        backtester = Backtester(initial_capital=100000)
+        backtester = Backtester(initial_capital=initial_capital)
         backtest_results = backtester.run_backtest(
             signals_df, predictor.df, position_sizer, risk_manager
         )
