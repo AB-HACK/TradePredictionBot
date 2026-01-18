@@ -5,6 +5,7 @@ Handles stock data requests
 
 from fastapi import APIRouter, HTTPException
 from typing import List, Optional
+from pydantic import BaseModel
 
 from app.utils.path_setup import setup_paths
 from app.utils.exceptions import handle_api_exception, DataError
@@ -15,6 +16,12 @@ setup_paths()
 from data import fetch_live_data, fetch_multiple_stocks
 
 router = APIRouter()
+
+class BatchStockDataRequest(BaseModel):
+    """Request model for batch stock data"""
+    tickers: List[str]
+    period: str = "1y"
+    interval: str = "1d"
 
 @router.get("/ticker/{ticker}")
 async def get_stock_data(
@@ -55,24 +62,23 @@ async def get_stock_data(
         raise handle_api_exception(e, default_message=f"Error fetching data for {ticker}")
 
 @router.post("/batch")
-async def get_batch_stock_data(
-    tickers: List[str],
-    period: str = "1y",
-    interval: str = "1d"
-):
+async def get_batch_stock_data(request: BatchStockDataRequest):
     """
     Get stock data for multiple tickers
     
     Args:
-        tickers: List of stock ticker symbols
-        period: Time period
-        interval: Data interval
+        request: Batch stock data request with tickers, period, and interval
     
     Returns:
         Dictionary of stock data
     """
     try:
-        stock_data = fetch_multiple_stocks(tickers, period=period, interval=interval, use_cache=True)
+        stock_data = fetch_multiple_stocks(
+            request.tickers, 
+            period=request.period, 
+            interval=request.interval, 
+            use_cache=True
+        )
         
         # Convert DataFrames to JSON
         result = {}
