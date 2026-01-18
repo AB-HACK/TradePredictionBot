@@ -4,7 +4,7 @@
  */
 
 import axios from 'axios';
-import { Prediction, BacktestResult, ModelInfo, BacktestRequest } from '../types';
+import { Prediction, BacktestResult, ModelInfo, BacktestRequest, StockData } from '../types';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
 
@@ -103,16 +103,18 @@ export const backtestAPI = {
 export const dataAPI = {
   /**
    * Get stock data for a ticker
+   * Returns the data array directly
    */
   getStockData: async (
     ticker: string,
     period: string = '1y',
     interval: string = '1d'
-  ) => {
+  ): Promise<StockData[]> => {
     const response = await api.get(`/api/data/ticker/${ticker}`, {
       params: { period, interval },
     });
-    return response.data;
+    // Extract the nested data array from the response
+    return response.data.data || [];
   },
 
   /**

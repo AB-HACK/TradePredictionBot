@@ -33,9 +33,9 @@ export const Dashboard: React.FC = () => {
   const loadStockData = async () => {
     setLoadingData(true);
     try {
-      const response = await dataAPI.getStockData(ticker, '1y', '1d');
-      if (response.data) {
-        setStockData(response.data);
+      const stockDataArray = await dataAPI.getStockData(ticker, '1y', '1d');
+      if (stockDataArray && stockDataArray.length > 0) {
+        setStockData(stockDataArray);
       }
     } catch (error) {
       console.error('Error loading stock data:', error);

@@ -122,7 +122,7 @@ class PredictionService:
             return {
                 "ticker": ticker,
                 "prediction": float(prediction),
-                "confidence": float(confidence) if confidence else None,
+                "confidence": float(confidence) if confidence is not None else None,
                 "direction": direction,
                 "timestamp": datetime.now().isoformat()
             }
