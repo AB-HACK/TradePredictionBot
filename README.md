@@ -1,6 +1,8 @@
-# Stock Prediction Bot - Data Pipeline
+# Trade Prediction Bot - Complete Quantitative Trading System
 
-A comprehensive Python application for fetching, cleaning, analyzing, and preparing stock market data for predictive modeling. This project includes a temporary caching system for efficient data processing and provides a complete pipeline from raw data to analysis-ready datasets.
+A comprehensive Python-based quantitative trading system that predicts stock market movements using machine learning. This project provides a complete pipeline from raw market data collection to trained predictive models, enabling data-driven trading decisions with professional-grade features including error handling, monitoring, and model versioning.
+
+> 📖 **For detailed project overview, see [PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md)**
 
 ## 📋 Table of Contents
 
@@ -8,6 +10,7 @@ A comprehensive Python application for fetching, cleaning, analyzing, and prepar
 - [Prerequisites](#-prerequisites)
 - [Installation](#-installation)
 - [Quick Start](#-quick-start)
+- [Web UI Setup](#-web-ui-setup)
 - [Project Structure](#-project-structure)
 - [Usage Guide](#-usage-guide)
 - [Cache System](#-cache-system)
@@ -112,6 +115,60 @@ python src/test_fetch.py
 - Fetches and processes multiple stocks
 - Shows data validation
 - Displays visualizations
+
+## 🌐 Web UI Setup
+
+The project includes a React + TypeScript web interface for visualizing predictions and stock data.
+
+### Backend Setup
+
+1. **Install backend dependencies:**
+
+```bash
+# From project root
+pip install -r requirements.txt
+cd backend
+pip install -r requirements.txt
+```
+
+2. **Start the FastAPI server:**
+
+```bash
+cd backend
+python -m app.main
+```
+
+The API will be available at `http://localhost:8000`
+API documentation: `http://localhost:8000/docs`
+
+### Frontend Setup
+
+1. **Install Node.js dependencies:**
+
+```bash
+cd frontend
+npm install
+```
+
+2. **Start the development server:**
+
+```bash
+npm start
+```
+
+The UI will open at `http://localhost:3000`
+
+### Features
+
+- 📊 Real-time stock predictions
+- 📈 Interactive stock charts (using recharts)
+- 🔄 WebSocket support for live updates
+- 📱 Responsive design with Tailwind CSS
+- 🎯 Prediction confidence indicators
+
+For detailed setup instructions, see:
+- [Backend README](backend/README.md)
+- [Frontend README](frontend/README.md)
 
 ## 📁 Project Structure
 
