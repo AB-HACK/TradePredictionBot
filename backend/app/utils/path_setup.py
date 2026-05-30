@@ -16,9 +16,8 @@ def setup_paths():
     project_root = Path(__file__).parent.parent.parent.parent
     
     paths_to_add = [
-        str(project_root),  # Project root
+        str(project_root),  # Project root (for src package imports)
         str(project_root / 'quantitative_trading' / 'src'),  # Quantitative trading modules
-        str(project_root / 'src'),  # Core src modules
     ]
     
     for path in paths_to_add:

@@ -71,8 +71,8 @@ class PredictionService:
         """
         try:
             from quantitative_models import QuantitativePredictor
-            from data import fetch_multiple_stocks
-            from data_cleaning import clean_multiple_stocks
+            from src.data import fetch_multiple_stocks
+            from src.data_cleaning import clean_multiple_stocks
             
             # Check cache
             cache_key = f"{ticker}_{model_name}_{target_type}"
