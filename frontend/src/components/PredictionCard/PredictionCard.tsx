@@ -7,7 +7,7 @@ import React from 'react';
 import { Prediction } from '../../types';
 
 interface PredictionCardProps {
-  prediction: Prediction;
+  prediction: Prediction | null;
   loading?: boolean;
 }
 

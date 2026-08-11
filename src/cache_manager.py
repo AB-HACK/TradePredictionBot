@@ -12,13 +12,14 @@ import os
 import tempfile
 import shutil
 import atexit
-import time
 import json
 import pandas as pd
 from datetime import datetime
 from typing import Dict, Any, Optional
-import warnings
-warnings.filterwarnings('ignore')
+
+from .logging_setup import get_logger
+
+logger = get_logger(__name__)
 
 class TemporaryCacheManager:
     """
@@ -50,7 +51,7 @@ class TemporaryCacheManager:
         # Register cleanup function to run on program exit
         atexit.register(self.cleanup_cache)
         
-        print(f"[CACHE] Cache initialized at: {self.cache_dir}")
+        logger.info("Cache initialized at: %s", self.cache_dir)
     
     def _generate_cache_filename(self, data_type: str, ticker: str = None, suffix: str = "") -> str:
         """
@@ -88,7 +89,7 @@ class TemporaryCacheManager:
             str: Path to the cached file
         """
         if df is None or df.empty:
-            print(f"⚠️  Warning: Attempting to cache empty DataFrame for {data_type}")
+            logger.warning("Attempting to cache empty DataFrame for %s", data_type)
             return None
         
         # Generate filename and path

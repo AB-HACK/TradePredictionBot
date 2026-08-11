@@ -13,7 +13,7 @@ from app.utils.exceptions import handle_api_exception, DataError
 # Setup paths for imports
 setup_paths()
 
-from data import fetch_live_data, fetch_multiple_stocks
+from src.data import fetch_live_data, fetch_multiple_stocks
 
 router = APIRouter()
 
